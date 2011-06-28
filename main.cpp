@@ -40,12 +40,12 @@ void getStars(const vector<string> & fn, vector<vector<KeyPoint> *> & stars, con
 		cvReleaseImage(&label);
 
 		// traverse the blobs
-		int i = 0;
-		for (CvBlobs::iterator it = blobs.begin(); it != blobs.end(); ++it)
+		for (CvBlobs::const_iterator it = blobs.begin(); it != blobs.end(); ++it)
 		{
-			++i;
+			const CvBlob * b = it->second;
+			cout << "    * " << b->label << ". " << b->area << "px at "
+				<< b->centroid.x << "," << b->centroid.y << endl;
 		}
-		cout << i << endl;
 	}
 }
 
