@@ -36,9 +36,13 @@ int main(int argc, char ** argv)
 	}
 
 	// get the list of images
-	vector<string> imgNames(end - argv);
+	vector<string> imgNames;
 	while (argv < end)
 		imgNames.push_back(*argv++);
+
+	// perform some sanity checks
+	if (imgNames.size() < 2)
+		die("no point in aligning less than two images");
 
 	return 0;
 }
