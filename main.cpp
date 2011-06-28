@@ -9,10 +9,27 @@ using namespace cv;
 using namespace cvb;
 using namespace std;
 
+static const double PI = 3.1415926536;
+
 struct Options
 {
 	int threshold;
 };
+
+struct Star
+{
+	double x, y;
+	double r;
+
+	Star(double x, double y, double r)
+	{
+		this->x = x;
+		this->y = y;
+		this->r = r;
+	}
+};
+
+typedef vector<Star> Stars;
 
 void die(const string & msg)
 {
@@ -20,19 +37,20 @@ void die(const string & msg)
 	exit(1);
 }
 
-void getStars(const vector<string> & fn, vector<vector<KeyPoint> *> & stars, const Options & opt)
+
+void getStars(const vector<string> & fn, vector<Stars *> & stars, const Options & opt)
 {
 	stars.clear();
 	for (vector<string>::const_iterator it = fn.begin(); it != fn.end(); ++it)
 	{
-		cout << "  * " << *it << endl;
+		cout << "  * " << *it << ": ";
 
 		// load the image
 		Mat srcimg = imread(*it, CV_LOAD_IMAGE_GRAYSCALE);
 		Mat image;
 		threshold(srcimg, image, opt.threshold, 255, THRESH_BINARY);
 
-		// find the stars
+		// find the blobs
 		CvBlobs blobs;
 		IplImage img = image;
 		IplImage * label = cvCreateImage(cvGetSize(&img), IPL_DEPTH_LABEL, 1);
@@ -40,12 +58,16 @@ void getStars(const vector<string> & fn, vector<vector<KeyPoint> *> & stars, con
 		cvReleaseImage(&label);
 
 		// traverse the blobs
+		Stars * st = new vector<Star>();
 		for (CvBlobs::const_iterator it = blobs.begin(); it != blobs.end(); ++it)
 		{
 			const CvBlob * b = it->second;
-			cout << "    * " << b->label << ". " << b->area << "px at "
-				<< b->centroid.x << "," << b->centroid.y << endl;
+			st->push_back(Star(b->centroid.x, b->centroid.y, sqrt(b->area / PI)));
 		}
+
+		cout << st->size() << " stars" << endl;
+
+		stars.push_back(st);
 	}
 }
 
@@ -85,11 +107,11 @@ int main(int argc, char ** argv)
 
 	// find stars on each image
 	cout << "Finding stars..." << endl;
-	vector<vector<KeyPoint> *> stars;
+	vector<Stars *> stars;
 	getStars(imgNames, stars, opt); // allocates stars
 
 	// free the memory
-	for (vector<vector<KeyPoint> *>::iterator it = stars.begin(); it != stars.end(); ++it)
+	for (vector<Stars *>::iterator it = stars.begin(); it != stars.end(); ++it)
 	{
 		delete *it;
 	}
