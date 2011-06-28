@@ -29,6 +29,16 @@ struct Star
 	}
 };
 
+bool operator<(const Star & l, const Star & r)
+{
+	if (l.r < r.r)
+		return true;
+	if (l.r > r.r)
+		return false;
+
+	return (l.x < r.x);
+}
+
 typedef vector<Star> Stars;
 
 void die(const string & msg)
@@ -37,6 +47,9 @@ void die(const string & msg)
 	exit(1);
 }
 
+void getTransform(Stars & xs, Stars & ys)
+{
+}
 
 void getStars(const vector<string> & fn, vector<Stars *> & stars, const Options & opt)
 {
@@ -109,6 +122,12 @@ int main(int argc, char ** argv)
 	cout << "Finding stars..." << endl;
 	vector<Stars *> stars;
 	getStars(imgNames, stars, opt); // allocates stars
+
+	// sort each vector by star size
+	for (vector<Stars *>::iterator it = stars.begin(); it != stars.end(); ++it)
+	{
+		sort((*it)->begin(), (*it)->end());
+	}
 
 	// free the memory
 	for (vector<Stars *>::iterator it = stars.begin(); it != stars.end(); ++it)
