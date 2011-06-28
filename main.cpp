@@ -8,12 +8,21 @@
 using namespace cv;
 using namespace std;
 
+void die(const string & msg)
+{
+	cerr << "Error: " << msg << endl;
+	exit(1);
+}
+
 int main(int argc, char ** argv)
 {
 	char ** end =  argv + argc;
+	++argv; // skip the name of the executable
+
+	// get the options
 	while (argv < end)
 	{
-		// not an option
+		// end of options
 		if (**argv != '-')
 			break;
 
@@ -22,14 +31,14 @@ int main(int argc, char ** argv)
 		// no options will follow
 		if (opt == "--")
 			break;
+
+		die("unknown option " + opt);
 	}
 
-	vector<Mat> images(end - argv);
+	// get the list of images
+	vector<string> imgNames(end - argv);
 	while (argv < end)
-	{
-		cout << "Loading " << *argv << "..." << endl;
-		images.push_back(imread(*argv++, -1));
-	}
+		imgNames.push_back(*argv++);
 
 	return 0;
 }
