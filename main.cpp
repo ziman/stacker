@@ -2,19 +2,17 @@
 #include <string>
 #include <vector>
 
-#include "cv.h"
-#include "cvaux.hpp"
-#include "cv.hpp"
-#include "cxcore.hpp"
-#include "cxtypes.h"
-#include "cxmat.hpp"
-#include "highgui.h"
+#include "opencv.hpp"
+#include "cvblob.h"
 
 using namespace cv;
 using namespace std;
 
-struct StarOptions
+struct Options
 {
+	int threshold;
+
+	// StarDetector options
 	int maxSize;
 	int responseThreshold;
 	int lineThresholdProjected;
@@ -28,7 +26,7 @@ void die(const string & msg)
 	exit(1);
 }
 
-void getStars(const vector<string> & fn, vector<vector<KeyPoint> *> & stars, const StarOptions & opt)
+void getStars(const vector<string> & fn, vector<vector<KeyPoint> *> & stars, const Options & opt)
 {
 	namedWindow("Preview", CV_WINDOW_AUTOSIZE);
 	stars.clear();
@@ -37,7 +35,9 @@ void getStars(const vector<string> & fn, vector<vector<KeyPoint> *> & stars, con
 		cout << "  * " << *it << ": ";
 
 		// load the image
-		Mat image = imread(*it, CV_LOAD_IMAGE_GRAYSCALE);
+		Mat srcimg = imread(*it, CV_LOAD_IMAGE_GRAYSCALE);
+		Mat image;
+		threshold(srcimg, image, opt.threshold, 255, THRESH_TOZERO);
 
 		// find the stars
 		vector<KeyPoint> * pts = new vector<KeyPoint>();
@@ -51,7 +51,7 @@ void getStars(const vector<string> & fn, vector<vector<KeyPoint> *> & stars, con
 		cout << pts->size() << " stars." << endl;
 
 		// show the image
-		drawKeypoints(image, *pts, image, Scalar::all(-1), DrawMatchesFlags::DRAW_OVER_OUTIMG);
+		//drawKeypoints(image, *pts, image, Scalar::all(-1), DrawMatchesFlags::DRAW_OVER_OUTIMG);
 		imshow("Preview", image);
 		waitKey(1); // gui event loop
 	}
@@ -61,6 +61,15 @@ int main(int argc, char ** argv)
 {
 	char ** end =  argv + argc;
 	++argv; // skip the name of the executable
+
+	// some default options
+	Options opt;
+	opt.maxSize = 32;
+	opt.responseThreshold = 10;
+	opt.lineThresholdProjected = 8;
+	opt.lineThresholdBinarized = 8;
+	opt.suppressNonmaxSize = 0;
+	opt.threshold = 32;
 
 	// get the options
 	while (argv < end)
@@ -89,18 +98,14 @@ int main(int argc, char ** argv)
 
 	// find stars on each image
 	cout << "Finding stars..." << endl;
-
-	StarOptions sopt =
-	{
-		/* .maxSize = */ 32,
-		/* .responseThreshold = */ 20,
-		/* .lineThresholdProjected = */ 6,
-		/* .lineThresholdBinarized = */ 5,
-		/* .suppressNonmaxSize = */ 0
-	};
-
 	vector<vector<KeyPoint> *> stars;
-	getStars(imgNames, stars, sopt); // allocates stars
+	getStars(imgNames, stars, opt); // allocates stars
+
+	// free the memory
+	for (vector<vector<KeyPoint> *>::iterator it = stars.begin(); it != stars.end(); ++it)
+	{
+		delete *it;
+	}
 
 	return 0;
 }
