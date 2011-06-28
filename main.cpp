@@ -47,8 +47,104 @@ void die(const string & msg)
 	exit(1);
 }
 
+inline double sqr(double x)
+{
+	return x*x;
+}
+
+inline double min3(double x, double y, double z)
+{
+	return (x < y) ? ((x < z) ? x : z) : ((y < z) ? y : z);
+}
+
+#define D(m,n) dist[N*m + n]
+#define C(m,n) cost[NN*m + n]
 void getTransform(Stars & xs, Stars & ys)
 {
+	int M = xs.size();
+	int N = ys.size();
+
+	// distance table
+	double distSum = 0;
+	double * dist = new double[M*N];
+	for (int m = 0; m < M; ++m)
+		for (int n = 0; n < N; ++n)
+		{
+			D(m,n) = sqrt(
+				  sqr(xs[m].x - ys[n].x)
+				+ sqr(xs[m].y - ys[n].y)
+			);
+			distSum += D(m,n);
+		}
+	double avgDist = distSum / (M*N);
+
+	// calculate the cost table
+	int MM = M+1, NN = N+1;
+	double * cost = new double[MM*NN];
+	for (int m = 0; m <= M; ++m) C(m,0) = 0;
+	for (int n = 0; n <= N; ++n) C(0,n) = 0;
+	for (int m = 1; m <= M; ++m)
+	{
+		for (int n = 1; n <= N; ++n)
+		{
+			C(m,n) = min3(
+				C(m-1, n) + 2*avgDist,
+				C(m, n-1) + 2*avgDist,
+				C(m-1, n-1) + D(m-1, n-1)
+			);
+			
+			cout << C(m,n) << " ";
+		}
+		cout << endl;
+	}
+	
+	// gather results
+	int bestm = M, bestn = N;
+	for (int m = 3; m <= M; ++m) // start from 3 -> not interested in solutions with less than two em's
+		if (C(m,N) < C(bestm,bestn)) { bestm = m; bestn = N; }
+	for (int n = 3; n <= N; ++n)
+		if (C(M,n) < C(bestm,bestn)) { bestm = M; bestn = n; }
+	
+	// correlation check
+	if (bestm == 0 || bestn == 0)
+	{
+		cerr << "No correlation!" << endl;
+		return;
+	}
+	else
+	{
+		cout << "Best correlation: " << C(bestm,bestn) << endl;
+	}
+	
+	// trace back the optimal solution
+	int ms[3], ns[3]; // circular buffers
+	int m = bestm; int n = bestn;
+	int rnd = 0;
+	while (m > 0 && n > 0)
+	{
+		if (C(m,n) == C(m-1,n))
+			--m; // skip m
+		else if (C(m,n) == C(m,n-1))
+			--n; // skip n
+		else
+		{
+			// match! -> add to circular buffer
+			ms[rnd] = m-1;
+			ns[rnd] = n-1;
+			
+			rnd = (rnd + 1) % 3;
+			--m;
+			--n;
+		}
+	}
+	// in the circular buffer: first three matches
+	
+	cout << "We have this aligment:" << endl;
+	for (int i = 0; i < 3; ++i)
+	{
+		cout << "  " << ms[i] << " - " << ns[i];
+		cout << ", distance " << D(ms[i], ns[i]) << endl;
+	}
 }
 
 void getStars(const vector<string> & fn, vector<Stars *> & stars, const Options & opt)
@@ -126,8 +222,11 @@ int main(int argc, char ** argv)
 	// sort each vector by star size
 	for (vector<Stars *>::iterator it = stars.begin(); it != stars.end(); ++it)
 	{
-		sort((*it)->begin(), (*it)->end());
+		sort((*it)->rbegin(), (*it)->rend());
 	}
+	
+	// align the stars
+	getTransform(*stars[0], *stars[1]);
 
 	// free the memory
 	for (vector<Stars *>::iterator it = stars.begin(); it != stars.end(); ++it)
