@@ -1,6 +1,6 @@
 CXX = g++
-CXXFLAGS = -O2 -I/usr/include/opencv
-LDFLAGS= -lcv -lcxcore -lhighgui
+CXXFLAGS = -O2 -I/usr/local/include/opencv
+LDFLAGS= -L/usr/local/lib -lcv -lcxcore -lhighgui
 
 .SUFFIXES: .o .cpp
 
