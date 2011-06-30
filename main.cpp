@@ -42,6 +42,13 @@ Blob operator+(const Blob & l, const Blob & r)
 	q.y = (l.S*l.y + r.S*r.y) / q.S;
 }
 
+Blob & operator+=(Blob & blob, const Blob & x)
+{
+	double S = blob.S + x.S;
+	blob.x = (blob.S*blob.x + x.S*x.x) / S;
+	blob.y = (blob.S*blob.y + x.S*x.y) / S;
+}
+
 bool operator<(const Star & l, const Star & r)
 {
 	if (l.r < r.r)
@@ -165,18 +172,47 @@ struct ScanItem
 {
 	Blob blob;
 	int l, r;
+
+	ScanItem(int _l, int _r, const Blob & _b)
+		: l(_l), r(_r), blob(_b)
+	{}
 };
 
 void findBlobs(const Mat & mat, Blobs & blobs)
 {
-	list<Blob> scan;
+	list<ScanItem> scan, newscan;
 	for (int y = 0; y < mat.rows; ++y)
 	{
-		const uint8_t * px = mat.ptr<uint8_t>(y);
+		const uint8_t * row = mat.ptr<uint8_t>(y);
+		list<ScanItem>::iterator it = scan.begin();
+		int l = 0;
 		for (int x = 0; x < mat.cols; ++x)
 		{
-			// foo
+			while (it != scan.end() && it->r < x)
+			{
+				blobs.push_back(it->blob);
+				++it;
+			}
+
+			while (x < mat.cols && row[x])
+				++x;
+
+			if (row[l])
+			{
+				Blob cur = {(x+l-1)/2.0, y, x-l};
+				while (it != scan.end() && it->l < x)
+				{
+					cur += it->blob;
+					++it;
+				}
+				newscan.push_back(ScanItem(l,x-1,cur));
+			}
+			else
+			{
+				l = ++x;
+			}
 		}
+		scan = newscan;
 	}
 }
 
