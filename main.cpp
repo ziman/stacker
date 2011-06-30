@@ -1,12 +1,11 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <list>
 
 #include "opencv.hpp"
-#include "cvblob.h"
 
 using namespace cv;
-using namespace cvb;
 using namespace std;
 
 static const double PI = 3.1415926536;
@@ -29,6 +28,20 @@ struct Star
 	}
 };
 
+struct Blob
+{
+	double x, y;
+	double S;
+};
+
+Blob operator+(const Blob & l, const Blob & r)
+{
+	Blob q;
+	q.S = l.S + r.S;
+	q.x = (l.S*l.x + r.S*r.x) / q.S;
+	q.y = (l.S*l.y + r.S*r.y) / q.S;
+}
+
 bool operator<(const Star & l, const Star & r)
 {
 	if (l.r < r.r)
@@ -40,6 +53,7 @@ bool operator<(const Star & l, const Star & r)
 }
 
 typedef vector<Star> Stars;
+typedef vector<Blob> Blobs;
 
 void die(const string & msg)
 {
@@ -147,6 +161,25 @@ void getTransform(Stars & xs, Stars & ys)
 	}
 }
 
+struct ScanItem
+{
+	Blob blob;
+	int l, r;
+};
+
+void findBlobs(const Mat & mat, Blobs & blobs)
+{
+	list<Blob> scan;
+	for (int y = 0; y < mat.rows; ++y)
+	{
+		const uint8_t * px = mat.ptr<uint8_t>(y);
+		for (int x = 0; x < mat.cols; ++x)
+		{
+			// foo
+		}
+	}
+}
+
 void getStars(const vector<string> & fn, vector<Stars *> & stars, const Options & opt)
 {
 	stars.clear();
@@ -160,18 +193,14 @@ void getStars(const vector<string> & fn, vector<Stars *> & stars, const Options 
 		threshold(srcimg, image, opt.threshold, 255, THRESH_BINARY);
 
 		// find the blobs
-		CvBlobs blobs;
-		IplImage img = image;
-		IplImage * label = cvCreateImage(cvGetSize(&img), IPL_DEPTH_LABEL, 1);
-		cvLabel(&img, label, blobs);
-		cvReleaseImage(&label);
+		Blobs blobs;
+		findBlobs(image, blobs);
 
 		// traverse the blobs
 		Stars * st = new vector<Star>();
-		for (CvBlobs::const_iterator it = blobs.begin(); it != blobs.end(); ++it)
+		for (Blobs::const_iterator it = blobs.begin(); it != blobs.end(); ++it)
 		{
-			const CvBlob * b = it->second;
-			st->push_back(Star(b->centroid.x, b->centroid.y, sqrt(b->area / PI)));
+			st->push_back(Star(it->x, it->y, sqrt(it->S / PI)));
 		}
 
 		cout << st->size() << " stars" << endl;
