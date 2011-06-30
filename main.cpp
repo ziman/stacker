@@ -214,6 +214,11 @@ void findBlobs(const Mat & mat, Blobs & blobs)
 		}
 		scan = newscan;
 	}
+
+	for (list<ScanItem>::const_iterator it = scan.begin(); it != scan.end(); ++it)
+	{
+		blobs.push_back(it->blob);
+	}
 }
 
 void getStars(const vector<string> & fn, vector<Stars *> & stars, const Options & opt)
