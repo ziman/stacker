@@ -74,13 +74,108 @@ inline double sqr(double x)
 	return x*x;
 }
 
+inline double dist(const Star & x, const Star & y)
+{
+	return sqrt(sqr(x.x - y.x) + sqr(x.y - y.y));
+}
+
 inline double min3(double x, double y, double z)
 {
 	return (x < y) ? ((x < z) ? x : z) : ((y < z) ? y : z);
 }
 
+struct Triangle
+{
+	double a, b, c;
+	double cfer;
+
+	Triangle(const Star & p, const Star & q, const Star & r)
+	{
+		double m = dist(p,q);
+		double n = dist(q,r);
+		double o = dist(r,p);
+
+		if (m < n)
+		{
+			if (o < m)
+				{ a = o; b = m; c = n; }
+			else
+				if (o < n)
+					{ a = m; b = o; c = n; }
+				else
+					{ a = m; b = n; c = o; }
+		}
+		else
+		{
+			if (o < n)
+				{ a = o; b = n; c = m; }
+			else
+				if (o < m)
+					{ a = n; b = o; c = m; }
+				else
+					{ a = n; b = m; c = o; }
+		}
+
+		cfer = m+n+o;
+	}
+};
+
+double tdist(const Triangle & a, const Triangle & b)
+{
+	return sqr(a.a - b.a) + sqr(a.b - b.b) + sqr(a.c - b.c);
+}
+
+vector<Triangle> triangles(const Stars & stars)
+{
+	static const double MIN_CFER = 300;
+	int N = stars.size();
+	vector<Triangle> result;
+
+	for (int i = 0; i < N; ++i)
+		for (int j = i+1; j < N; ++j)
+			for (int k = j+1; k < N; ++k)
+			{
+				Triangle t(stars[i], stars[j], stars[k]);
+				if (t.cfer > MIN_CFER)
+					result.push_back(t);
+			}
+
+	return result;
+}
+
+ostream & operator<<(ostream & out, const Triangle & t)
+{
+	return out << "[" << t.a << ", " << t.b << ", " << t.c << "]";
+}
+
 void getTransform(Stars & xs, Stars & ys)
 {
+	vector<Triangle> xt = triangles(xs);
+	vector<Triangle> yt = triangles(ys);
+
+	vector<double> xdist;
+	int p = -1, q = -1;
+	double maxdist = 0;
+	double mindist = 1.0e10;
+	for (int i = 0; i < xt.size(); ++i)
+	{
+		for (int j = 0; j < yt.size(); ++j)
+		{
+			double dist = tdist(xt[i], yt[j]);
+			if (dist < mindist)
+			{
+				mindist = dist;
+				p = i; q = j;
+			}
+		}
+	}
+
+	if (p == -1)
+		die("No unique triangle found!");
+
+	cout << "Most similar triangles: " << p << ":" << q
+		<< ", dist = " << tdist(xt[p], yt[q]) << endl;
+	cout << xt[p] << endl << yt[q] << endl;
 }
 
 struct ScanItem
