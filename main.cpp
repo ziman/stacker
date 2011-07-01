@@ -334,7 +334,23 @@ int main(int argc, char ** argv)
 	}
 	
 	// align the stars
+	cout << "Aligning first two images..." << endl;
 	Mat trans = getTransform(*stars[0], *stars[1]);
+
+	cout << "Testing overlay..." << endl;
+	Mat imgb = imread(imgNames[0], CV_LOAD_IMAGE_GRAYSCALE);
+	Mat imga = imread(imgNames[1], CV_LOAD_IMAGE_GRAYSCALE);
+	Mat imgb_warped;
+	warpAffine(imgb, imgb_warped, trans, imgb.size());
+
+	imgb_warped *= 0.5;
+	imga *= 0.5;
+	imga += imgb_warped;
+	resize(imga, imgb, Size(0,0), 0.25, 0.25);
+
+	namedWindow("preview");
+	imshow("preview", imgb);
+	waitKey(0);
 
 	// free the memory
 	for (vector<Stars *>::iterator it = stars.begin(); it != stars.end(); ++it)
