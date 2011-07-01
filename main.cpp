@@ -86,6 +86,7 @@ inline double min3(double x, double y, double z)
 
 struct Triangle
 {
+	const Star * t, * u, * v;
 	double a, b, c;
 	double cfer;
 
@@ -98,22 +99,22 @@ struct Triangle
 		if (m < n)
 		{
 			if (o < m)
-				{ a = o; b = m; c = n; }
+				{ a = o; b = m; c = n; t = &r; u = &p; v = &q; }
 			else
 				if (o < n)
-					{ a = m; b = o; c = n; }
+					{ a = m; b = o; c = n; t = &q; u = &p; v = &r; }
 				else
-					{ a = m; b = n; c = o; }
+					{ a = m; b = n; c = o; t = &p; u = &q; v = &r; }
 		}
 		else
 		{
 			if (o < n)
-				{ a = o; b = n; c = m; }
+				{ a = o; b = n; c = m; t = &p; u = &r; v = &q; }
 			else
 				if (o < m)
-					{ a = n; b = o; c = m; }
+					{ a = n; b = o; c = m; t = &q; u = &r; v = &p; }
 				else
-					{ a = n; b = m; c = o; }
+					{ a = n; b = m; c = o; t = &r; u = &q; v = &p; }
 		}
 
 		cfer = m+n+o;
@@ -148,7 +149,7 @@ ostream & operator<<(ostream & out, const Triangle & t)
 	return out << "[" << t.a << ", " << t.b << ", " << t.c << "]";
 }
 
-void getTransform(Stars & xs, Stars & ys)
+Mat getTransform(Stars & xs, Stars & ys)
 {
 	vector<Triangle> xt = triangles(xs);
 	vector<Triangle> yt = triangles(ys);
@@ -173,9 +174,23 @@ void getTransform(Stars & xs, Stars & ys)
 	if (p == -1)
 		die("No unique triangle found!");
 
+	Point2f xp[3], yp[3];
+	xp[0] = Point2f(xt[p].t->x, xt[p].t->y);
+	xp[1] = Point2f(xt[p].u->x, xt[p].u->y);
+	xp[2] = Point2f(xt[p].v->x, xt[p].v->y);
+
+	yp[0] = Point2f(yt[q].t->x, yt[q].t->y);
+	yp[1] = Point2f(yt[q].u->x, yt[q].u->y);
+	yp[2] = Point2f(yt[q].v->x, yt[q].v->y);
+
+	Mat trans = getAffineTransform(xp, yp);
+
 	cout << "Most similar triangles: " << p << ":" << q
 		<< ", dist = " << tdist(xt[p], yt[q]) << endl;
 	cout << xt[p] << endl << yt[q] << endl;
+	cout << "Transform: " << endl << trans << endl;
+
+	return trans;
 }
 
 struct ScanItem
