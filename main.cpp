@@ -47,6 +47,7 @@ Blob & operator+=(Blob & blob, const Blob & x)
 	double S = blob.S + x.S;
 	blob.x = (blob.S*blob.x + x.S*x.x) / S;
 	blob.y = (blob.S*blob.y + x.S*x.y) / S;
+	blob.S = S;
 }
 
 bool operator<(const Star & l, const Star & r)
