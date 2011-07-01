@@ -86,9 +86,9 @@ inline double min3(double x, double y, double z)
 
 struct Triangle
 {
-	const Star * t, * u, * v;
-	double a, b, c;
-	double cfer;
+	const Star * t, * u, * v; // TU = a, UV = b, VT = c
+	double a, b, c; // sides, shortest to longest
+	double cfer; // circumference
 
 	Triangle(const Star & p, const Star & q, const Star & r)
 	{
@@ -149,6 +149,14 @@ ostream & operator<<(ostream & out, const Triangle & t)
 	return out << "[" << t.a << ", " << t.b << ", " << t.c << "]";
 }
 
+Point2f controlPoint(const Point2f & u, const Point2f & v)
+{
+	double dx = v.x - u.x;
+	double dy = v.y - u.y;
+
+	return Point2f(u.x - dy, u.y + dx);
+}
+
 Mat getTransform(Stars & xs, Stars & ys)
 {
 	vector<Triangle> xt = triangles(xs);
@@ -177,20 +185,13 @@ Mat getTransform(Stars & xs, Stars & ys)
 	Point2f xp[3], yp[3];
 	xp[0] = Point2f(xt[p].t->x, xt[p].t->y);
 	xp[1] = Point2f(xt[p].u->x, xt[p].u->y);
-	xp[2] = Point2f(xt[p].v->x, xt[p].v->y);
+	xp[2] = controlPoint(xp[0], xp[1]);
 
 	yp[0] = Point2f(yt[q].t->x, yt[q].t->y);
 	yp[1] = Point2f(yt[q].u->x, yt[q].u->y);
-	yp[2] = Point2f(yt[q].v->x, yt[q].v->y);
+	yp[2] = controlPoint(yp[0], yp[1]);
 
-	Mat trans = getAffineTransform(xp, yp);
-
-	cout << "Most similar triangles: " << p << ":" << q
-		<< ", dist = " << tdist(xt[p], yt[q]) << endl;
-	cout << xt[p] << endl << yt[q] << endl;
-	cout << "Transform: " << endl << trans << endl;
-
-	return trans;
+	return getAffineTransform(xp, yp);
 }
 
 struct ScanItem
@@ -333,7 +334,7 @@ int main(int argc, char ** argv)
 	}
 	
 	// align the stars
-	getTransform(*stars[0], *stars[1]);
+	Mat trans = getTransform(*stars[0], *stars[1]);
 
 	// free the memory
 	for (vector<Stars *>::iterator it = stars.begin(); it != stars.end(); ++it)
