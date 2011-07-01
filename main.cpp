@@ -13,6 +13,7 @@ static const double PI = 3.1415926536;
 struct Options
 {
 	int threshold;
+	double subsample; // 0..1 -> size on load
 };
 
 struct Star
@@ -39,6 +40,7 @@ Blob operator+(const Blob & l, const Blob & r)
 	Blob q;
 	q.S = l.S + r.S;
 	q.x = (l.S*l.x + r.S*r.x) / q.S;
+
 	q.y = (l.S*l.y + r.S*r.y) / q.S;
 }
 
@@ -258,34 +260,52 @@ void findBlobs(const Mat & mat, Blobs & blobs)
 	}
 }
 
-void getStars(const vector<string> & fn, vector<Stars *> & stars, const Options & opt)
+void findStars(const Mat & srcimg, Stars & stars, int thresh)
 {
+	// threshold the image
+	Mat image;
+	threshold(srcimg, image, thresh, 255, THRESH_BINARY);
+
+	// find the blobs
+	Blobs blobs;
+	findBlobs(image, blobs);
+
+	// traverse the blobs
 	stars.clear();
-	for (vector<string>::const_iterator it = fn.begin(); it != fn.end(); ++it)
+	for (Blobs::const_iterator it = blobs.begin(); it != blobs.end(); ++it)
 	{
-		cout << "  * " << *it << ": ";
-
-		// load the image
-		Mat image = imread(*it, CV_LOAD_IMAGE_GRAYSCALE);
-		Mat srcimg;
-		resize(image, srcimg, Size(0,0), 0.25, 0.25);
-		threshold(srcimg, image, opt.threshold, 255, THRESH_BINARY);
-
-		// find the blobs
-		Blobs blobs;
-		findBlobs(image, blobs);
-
-		// traverse the blobs
-		Stars * st = new vector<Star>();
-		for (Blobs::const_iterator it = blobs.begin(); it != blobs.end(); ++it)
-		{
-			st->push_back(Star(it->x, it->y, sqrt(it->S / PI)));
-		}
-
-		cout << st->size() << " stars" << endl;
-
-		stars.push_back(st);
+		stars.push_back(Star(it->x, it->y, sqrt(it->S / PI)));
 	}
+}
+
+Mat merge(const vector<string> & fn, int a, int b, const Options & opt)
+{
+	if (a+1 >= b)
+	{
+		cout << "Loading " << fn[a] << endl;
+		Mat full = imread(fn[a], CV_LOAD_IMAGE_GRAYSCALE);
+		Mat subsampled;
+		resize(full, subsampled, Size(0,0), opt.subsample, opt.subsample);
+		return subsampled;
+	}
+
+	// merge recursively
+	int mid = (a + b) / 2;
+	Mat l = merge(fn, a, mid, opt);
+	Mat r = merge(fn, mid, b, opt);
+
+	// align the images
+	Stars lstars, rstars;
+	findStars(l, lstars, opt.threshold);
+	findStars(r, rstars, opt.threshold);
+	Mat trans = getTransform(lstars, rstars);
+
+	// remap
+	Mat lremap;
+	warpAffine(l, lremap, trans, r.size());
+	
+	// merge
+	return (0.5*lremap + 0.5*r);
 }
 
 int main(int argc, char ** argv)
@@ -296,6 +316,7 @@ int main(int argc, char ** argv)
 	// some default options
 	Options opt;
 	opt.threshold = 32;
+	opt.subsample = 0.3;
 
 	// get the options
 	while (argv < end)
@@ -322,41 +343,12 @@ int main(int argc, char ** argv)
 	if (imgNames.size() < 2)
 		die("no point in aligning less than two images");
 
-	// find stars on each image
-	cout << "Finding stars..." << endl;
-	vector<Stars *> stars;
-	getStars(imgNames, stars, opt); // allocates stars
-
-	// sort each vector by star size
-	for (vector<Stars *>::iterator it = stars.begin(); it != stars.end(); ++it)
-	{
-		sort((*it)->rbegin(), (*it)->rend());
-	}
-	
-	// align the stars
-	cout << "Aligning first two images..." << endl;
-	Mat trans = getTransform(*stars[0], *stars[1]);
-
-	cout << "Testing overlay..." << endl;
-	Mat imgb = imread(imgNames[0], CV_LOAD_IMAGE_GRAYSCALE);
-	Mat imga = imread(imgNames[1], CV_LOAD_IMAGE_GRAYSCALE);
-	Mat imgb_warped;
-	warpAffine(imgb, imgb_warped, trans, imgb.size());
-
-	imgb_warped *= 0.5;
-	imga *= 0.5;
-	imga += imgb_warped;
-	resize(imga, imgb, Size(0,0), 0.25, 0.25);
+	// stack the images
+	Mat stack = merge(imgNames, 0, imgNames.size(), opt);
 
 	namedWindow("preview");
-	imshow("preview", imgb);
+	imshow("preview", stack);
 	waitKey(0);
-
-	// free the memory
-	for (vector<Stars *>::iterator it = stars.begin(); it != stars.end(); ++it)
-	{
-		delete *it;
-	}
 
 	return 0;
 }
