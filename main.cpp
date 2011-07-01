@@ -184,7 +184,7 @@ int main(int argc, char ** argv)
 
 	// some default options
 	Options opt;
-	opt.threshold = 128;
+	opt.threshold = 32;
 
 	// get the options
 	while (argv < end)
