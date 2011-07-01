@@ -101,7 +101,7 @@ void findBlobs(const Mat & mat, Blobs & blobs)
 	waitKey(1000);
 	*/
 
-	cout << "depth: " << mat.depth() << ", type: " << mat.type() << ", chans: " << mat.channels() << endl;
+	//cout << "depth: " << mat.depth() << ", type: " << mat.type() << ", chans: " << mat.channels() << endl;
 	list<ScanItem> scan, newscan;
 	for (int y = 0; y < mat.rows; ++y)
 	{
@@ -124,7 +124,7 @@ void findBlobs(const Mat & mat, Blobs & blobs)
 			// if white segment found
 			if (row[l])
 			{
-				cout << "rowscan at " << l << ".." << x << "," << y << endl;
+				//cout << "rowscan at " << l << ".." << x << "," << y << endl;
 				Blob cur = {(x+l-1)/2.0, y, x-l};
 				while (it != scan.end() && it->l < x)
 				{
@@ -137,6 +137,7 @@ void findBlobs(const Mat & mat, Blobs & blobs)
 			l = ++x;
 		}
 		scan = newscan;
+		newscan.clear();
 	}
 
 	for (list<ScanItem>::const_iterator it = scan.begin(); it != scan.end(); ++it)
