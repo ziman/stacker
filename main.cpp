@@ -27,6 +27,11 @@ struct Star
 		this->y = y;
 		this->r = r;
 	}
+	
+	Star(const Star &s)
+		: x(s.x), y(s.y), r(s.r)
+	{
+	}
 };
 
 struct Blob
@@ -76,81 +81,6 @@ inline double sqr(double x)
 	return x*x;
 }
 
-inline double dist(const Star & x, const Star & y)
-{
-	return sqrt(sqr(x.x - y.x) + sqr(x.y - y.y));
-}
-
-inline double min3(double x, double y, double z)
-{
-	return (x < y) ? ((x < z) ? x : z) : ((y < z) ? y : z);
-}
-
-struct Triangle
-{
-	const Star * t, * u, * v; // TU = a, UV = b, VT = c
-	double a, b, c; // sides, shortest to longest
-	double cfer; // circumference
-
-	Triangle(const Star & p, const Star & q, const Star & r)
-	{
-		double m = dist(p,q);
-		double n = dist(q,r);
-		double o = dist(r,p);
-
-		if (m < n)
-		{
-			if (o < m)
-				{ a = o; b = m; c = n; t = &r; u = &p; v = &q; }
-			else
-				if (o < n)
-					{ a = m; b = o; c = n; t = &q; u = &p; v = &r; }
-				else
-					{ a = m; b = n; c = o; t = &p; u = &q; v = &r; }
-		}
-		else
-		{
-			if (o < n)
-				{ a = o; b = n; c = m; t = &p; u = &r; v = &q; }
-			else
-				if (o < m)
-					{ a = n; b = o; c = m; t = &q; u = &r; v = &p; }
-				else
-					{ a = n; b = m; c = o; t = &r; u = &q; v = &p; }
-		}
-
-		cfer = m+n+o;
-	}
-};
-
-double tdist(const Triangle & a, const Triangle & b)
-{
-	return sqr(a.a - b.a) + sqr(a.b - b.b) + sqr(a.c - b.c);
-}
-
-vector<Triangle> triangles(const Stars & stars)
-{
-	static const double MIN_CFER = 300;
-	int N = stars.size();
-	vector<Triangle> result;
-
-	for (int i = 0; i < N; ++i)
-		for (int j = i+1; j < N; ++j)
-			for (int k = j+1; k < N; ++k)
-			{
-				Triangle t(stars[i], stars[j], stars[k]);
-				if (t.cfer > MIN_CFER)
-					result.push_back(t);
-			}
-
-	return result;
-}
-
-ostream & operator<<(ostream & out, const Triangle & t)
-{
-	return out << "[" << t.a << ", " << t.b << ", " << t.c << "]";
-}
-
 Point2f controlPoint(const Point2f & u, const Point2f & v)
 {
 	double dx = v.x - u.x;
@@ -159,38 +89,48 @@ Point2f controlPoint(const Point2f & u, const Point2f & v)
 	return Point2f(u.x - dy, u.y + dx);
 }
 
-Mat getTransform(Stars & xs, Stars & ys)
+struct Line
 {
-	vector<Triangle> xt = triangles(xs);
-	vector<Triangle> yt = triangles(ys);
+	Star a, b;
+	double length;
 
-	vector<double> xdist;
-	int p = -1, q = -1;
-	double maxdist = 0;
-	double mindist = 1.0e10;
-	for (int i = 0; i < xt.size(); ++i)
+	Line(const Star & a_, const Star & b_)
+		: a(a_), b(b_)
 	{
-		for (int j = 0; j < yt.size(); ++j)
+		length = sqrt(sqr(a.x-b.x) + sqr(a.y - b.y));
+	}
+	
+	Line(const Line& x)
+		: a(x.a), b(x.b), length(x.length)
+	{
+	}
+};
+
+bool operator<(const Line & l, const Line & r)
+{
+	return (l.length < r.length);
+}
+
+void getLines(const Stars & stars, vector<Line> & lines)
+{
+	for (int i = 0; i < stars.size(); ++i)
+	{
+		for (int j = i+1; j < stars.size(); ++j)
 		{
-			double dist = tdist(xt[i], yt[j]);
-			if (dist < mindist)
-			{
-				mindist = dist;
-				p = i; q = j;
-			}
+			lines.push_back(Line(stars[i], stars[j]));
 		}
 	}
+}
 
-	if (p == -1)
-		die("No unique triangle found!");
-
+Mat getLineTransform(const Line & a, const Line & b)
+{
 	Point2f xp[3], yp[3];
-	xp[0] = Point2f(xt[p].t->x, xt[p].t->y);
-	xp[1] = Point2f(xt[p].u->x, xt[p].u->y);
+	xp[0] = Point2f(a.a.x, a.a.y);
+	xp[1] = Point2f(a.b.x, a.b.y);
 	xp[2] = controlPoint(xp[0], xp[1]);
 
-	yp[0] = Point2f(yt[q].t->x, yt[q].t->y);
-	yp[1] = Point2f(yt[q].u->x, yt[q].u->y);
+	yp[0] = Point2f(b.a.x, b.a.y);
+	yp[1] = Point2f(b.b.x, b.b.y);
 	yp[2] = controlPoint(yp[0], yp[1]);
 
 	return getAffineTransform(xp, yp);
@@ -204,6 +144,53 @@ struct ScanItem
 	ScanItem(int _l, int _r, const Blob & _b)
 		: l(_l), r(_r), blob(_b)
 	{}
+};
+
+Mat getTransform(const Stars & xs, const Stars & ys)
+{
+	static const double LENGTH_TOLERANCE = 5;
+
+	vector<Line> xl, yl;
+	getLines(xs, xl);
+	getLines(ys, yl);
+	sort(xl.rbegin(), xl.rend());
+	sort(yl.begin(), yl.end());
+	
+	cout << "X lines: " << xl.size() << ", Y lines: " << yl.size() << endl;
+
+	for (int i = 0; i < xl.size(); ++i)
+	{
+		const Line & xline = xl[i];
+		double xlen = xline.length;
+
+		// bisect -> find estimate
+		int lo = 0;
+		int hi = yl.size() - 1;
+		while (lo < hi)
+		{
+			int mid = (lo + hi) / 2;
+			if (xlen < yl[mid].length)
+				hi = mid;
+			else
+				lo = mid;
+		}
+
+		// find upper && lower bound
+		int estimate = lo;
+		int estlo = estimate, esthi = estimate;
+		while (estlo >= 0 && yl[estlo].length + LENGTH_TOLERANCE >= xlen)
+			--estlo;
+		while (esthi < yl.size() && yl[esthi].length - LENGTH_TOLERANCE <= xlen)
+			++esthi;
+
+		while (lo > estlo || hi < esthi)
+		{
+			Mat trans = getLineTransform(xline, yl[lo]);
+			cout << trans << endl;
+		}
+	}
+
+	return Mat::eye(2, 3, CV_32F);
 };
 
 void findBlobs(const Mat & mat, Blobs & blobs)
@@ -278,6 +265,37 @@ void findStars(const Mat & srcimg, Stars & stars, int thresh)
 	}
 }
 
+inline uint8_t clamp(int x)
+{
+	return (x < 0) ? 0 : ((x > 255) ? 255 : x);
+}
+
+#define FOREACH(st) \
+	for (int y = 0; y < mat.rows; ++y) 			\
+	{							\
+		uint8_t * row = mat.ptr<uint8_t>(y);	\
+		const uint8_t * end = row + mat.cols;		\
+		while (row < end) {				\
+			st;				\
+			++row;					\
+		}						\
+	}
+void normalize(Mat & mat)
+{
+	int sum = 0;
+	FOREACH(sum += *row);
+
+	int N = mat.rows * mat.cols;
+	int avg = sum / N;
+	int sqdiff = 0;
+	FOREACH(sqdiff += (avg-*row) * (avg-*row));
+	
+	int var = sqdiff / N;
+	int sigma = lround(sqrt(var));
+	
+	FOREACH(*row = clamp(255 * ((int) *row - (int) avg) / (16 * sigma)));
+}
+
 Mat merge(const vector<string> & fn, int a, int b, const Options & opt)
 {
 	if (a+1 >= b)
@@ -286,6 +304,7 @@ Mat merge(const vector<string> & fn, int a, int b, const Options & opt)
 		Mat full = imread(fn[a], CV_LOAD_IMAGE_GRAYSCALE);
 		Mat subsampled;
 		resize(full, subsampled, Size(0,0), opt.subsample, opt.subsample);
+		normalize(subsampled);
 		return subsampled;
 	}
 
@@ -315,7 +334,7 @@ int main(int argc, char ** argv)
 
 	// some default options
 	Options opt;
-	opt.threshold = 32;
+	opt.threshold = 128;
 	opt.subsample = 0.3;
 
 	// get the options
