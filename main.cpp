@@ -177,14 +177,10 @@ double evaluate(const Mat & trans, const Stars & xs, Index_<double> & yindex)
 	if (cnt < ENOUGH_STARS)
 		return 0;
 
-	double avg = sum / cnt;
-	double score = CLOSE_ENOUGH - avg;
-	cout << trans << endl << "==> cnt: " << cnt << ", average: " << avg << ", score: " << score << endl;
-	
-	return score;
+	return CLOSE_ENOUGH - sum/cnt;
 }
 
-Mat getTransform(const Stars & xs, const Stars & ys)
+bool getTransform(const Stars & xs, const Stars & ys, Mat & bestTrans)
 {
 	static const double LENGTH_TOLERANCE = 5;
 	
@@ -206,15 +202,19 @@ Mat getTransform(const Stars & xs, const Stars & ys)
 	sort(xl.rbegin(), xl.rend());
 	sort(yl.begin(), yl.end());
 	
-	cout << "X lines: " << xl.size() << ", Y lines: " << yl.size() << endl;
+	// cout << "X lines: " << xl.size() << ", Y lines: " << yl.size() << endl;
 
-	Mat bestTrans = Mat::eye(2, 3, CV_64F);
+	bestTrans = Mat::eye(2, 3, CV_64F);
 	double bestScore = 0;
 	
 	for (int i = 0; i < xl.size(); ++i)
 	{
 		const Line & xline = xl[i];
 		double xlen = xline.length;
+		
+		// allow up to 5% tolerance
+		if (xlen < LENGTH_TOLERANCE * 20)
+			break;
 
 		// bisect -> find estimate
 		int lo = 0;
@@ -266,7 +266,7 @@ Mat getTransform(const Stars & xs, const Stars & ys)
 		}
 	}
 
-	return bestTrans;
+	return (bestScore > 0);
 };
 
 void findBlobs(const Mat & mat, Blobs & blobs)
@@ -393,7 +393,12 @@ Mat merge(const vector<string> & fn, int a, int b, const Options & opt)
 	Stars lstars, rstars;
 	findStars(l, lstars, opt.threshold);
 	findStars(r, rstars, opt.threshold);
-	Mat trans = getTransform(lstars, rstars);
+	Mat trans;
+	bool ret = getTransform(lstars, rstars, trans);
+	if (!ret) {
+		cout << "Could not align images!" << endl;
+		return l; // no transform could be found -> return (arbitrarily) the left child
+	}
 
 	// remap
 	Mat lremap;
