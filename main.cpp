@@ -436,7 +436,7 @@ Mat merge(const vector<string> & fn, int a, int b, Options & opt)
 	Mat trans;
 	bool ret = getTransform(lstars, rstars, trans, opt);
 	if (!ret) {
-		cout << "Could not align images!" << endl;
+		cout << "ERROR: Could not align images! The resulting image will be bad." << endl;
 		return l; // no transform could be found -> return (arbitrarily) the left child
 	}
 
@@ -470,13 +470,28 @@ int main(int argc, char ** argv)
 		if (**argv != '-')
 			break;
 
-		string opt = *argv++;
+		string o = *argv++;
 
 		// no options will follow
-		if (opt == "--")
+		if (o == "--")
 			break;
-
-		die("unknown option " + opt);
+		
+		if (o == "-t")
+			opt.threshold = atoi(*argv++);
+		else if (o == "-s")
+			opt.subsample = atof(*argv++);
+		else if (o == "-l")
+			opt.minLineLength = atof(*argv++);
+		else if (o == "-p")
+			opt.percentStarsRequired = atoi(*argv++);
+		else if (o == "-t")
+			opt.relativeLengthTolerance = atof(*argv++);
+		else if (o == "-d")
+			opt.starDistCutoff = atof(*argv++);
+		else if (o == "-c")
+			opt.starCount = atoi(*argv++);
+		else 
+			die("unknown option " + o);
 	}
 
 	// get the list of images
