@@ -19,6 +19,7 @@ struct Options
 	float relativeLengthTolerance;
 	int percentStarsRequired;
 	float starDistCutoff;
+	int starCount;
 };
 
 struct Star
@@ -380,7 +381,7 @@ void normalize(Mat & mat)
 	FOREACH(*row = clamp(255 * ((int) *row - (int) avg) / (16 * sigma)));
 }
 
-Mat merge(const vector<string> & fn, int a, int b, const Options & opt)
+Mat merge(const vector<string> & fn, int a, int b, Options & opt)
 {
 	if (a+1 >= b)
 	{
@@ -399,7 +400,38 @@ Mat merge(const vector<string> & fn, int a, int b, const Options & opt)
 
 	// align the images
 	Stars lstars, rstars;
-	findStars(l, lstars, opt.threshold);
+	
+	if (opt.threshold == -1)
+	{ // autodetect threshold
+		lstars.clear();
+		int thresh = 128;
+		int cnt = 0;
+		while (true) {
+			findStars(l, lstars, thresh);
+			cnt = lstars.size();
+			if (abs(cnt - opt.starCount) < opt.starCount/5)
+				break;
+			else if (cnt < opt.starCount)
+				thresh = thresh / 2;
+			else
+				thresh = (thresh + 255) / 2;
+			
+			if (opt.threshold == thresh)
+			{
+				cerr << "Warning: could not estimate threshold." << endl;
+				break;
+			}
+			else
+			{
+				opt.threshold = thresh;
+			}
+		}
+		cout << "Threshold auto-estimated at " << opt.threshold << endl;
+	}
+	else
+	{
+		findStars(l, lstars, opt.threshold);
+	}
 	findStars(r, rstars, opt.threshold);
 	Mat trans;
 	bool ret = getTransform(lstars, rstars, trans, opt);
@@ -423,12 +455,13 @@ int main(int argc, char ** argv)
 
 	// some default options
 	Options opt;
-	opt.threshold = 128;
-	opt.subsample = 0.3;
+	opt.threshold = -1; // autodetect
+	opt.subsample = 0.5;
 	opt.minLineLength = 100;
 	opt.percentStarsRequired = 50;
 	opt.relativeLengthTolerance = 0.05;
 	opt.starDistCutoff = 100;
+	opt.starCount = 15;
 
 	// get the options
 	while (argv < end)
