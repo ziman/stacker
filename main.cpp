@@ -175,7 +175,10 @@ double evaluate(const Mat & trans, const Stars & xs, Index_<double> & yindex)
 	}
 	
 	if (cnt < ENOUGH_STARS)
+	{
+		cout << "Not enough stars: " << cnt << endl;
 		return 0;
+	}
 
 	return CLOSE_ENOUGH - sum/cnt;
 }
@@ -212,9 +215,12 @@ bool getTransform(const Stars & xs, const Stars & ys, Mat & bestTrans)
 		const Line & xline = xl[i];
 		double xlen = xline.length;
 		
-		// allow up to 5% tolerance
-		if (xlen < LENGTH_TOLERANCE * 20)
+		// allow up to 10% tolerance
+		if (xlen < LENGTH_TOLERANCE * 10)
+		{
+			cout << "Length tolerance threshold reached." << endl;
 			break;
+		}
 
 		// bisect -> find estimate
 		int lo = 0;
@@ -266,6 +272,7 @@ bool getTransform(const Stars & xs, const Stars & ys, Mat & bestTrans)
 		}
 	}
 
+	cout << "Best score is: " << bestScore << endl;
 	return (bestScore > 0);
 };
 

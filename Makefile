@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -O0 -g3 -I/usr/local/include/opencv2 -I/usr/local/include
+CXXFLAGS = -O2 -I/usr/local/include/opencv2 -I/usr/local/include
 LDFLAGS= -L/usr/local/lib \
 	 -lopencv_core -lopencv_features2d \
 	 -lopencv_highgui -lopencv_imgproc \
