@@ -15,6 +15,10 @@ struct Options
 {
 	int threshold;
 	double subsample; // 0..1 -> size on load
+	float minLineLength;
+	float relativeLengthTolerance;
+	int percentStarsRequired;
+	float starDistCutoff;
 };
 
 struct Star
@@ -147,7 +151,7 @@ struct ScanItem
 	{}
 };
 
-double evaluate(const Mat & trans, const Stars & xs, Index_<double> & yindex)
+double evaluate(const Mat & trans, const Stars & xs, Index_<double> & yindex, const Options & opt)
 {
 	Mat q(3, xs.size(), CV_64F);
 	for (int x = 0; x < xs.size(); ++x)
@@ -163,31 +167,26 @@ double evaluate(const Mat & trans, const Stars & xs, Index_<double> & yindex)
 	
 	int cnt = 0;
 	double sum = 0;
-	float CLOSE_ENOUGH = 100;
-	int ENOUGH_STARS = xs.size() / 2;
 	for (int i = 0; i < dists.rows; ++i)
 	{
 		float dist = dists.at<float>(i, 0);
-		if (dist < CLOSE_ENOUGH) {
+		if (dist < opt.starDistCutoff) {
 			++cnt;
 			sum += dist;
 		}
 	}
 	
-	if (cnt < ENOUGH_STARS)
+	if (cnt < opt.percentStarsRequired * xs.size() / 100)
 	{
 		// cout << "Not enough stars: " << cnt << endl;
 		return 0;
 	}
 
-	return CLOSE_ENOUGH - sum/cnt;
+	return opt.starDistCutoff - sum/cnt;
 }
 
-bool getTransform(const Stars & xs, const Stars & ys, Mat & bestTrans)
+bool getTransform(const Stars & xs, const Stars & ys, Mat & bestTrans, const Options & opt)
 {
-	static const double LENGTH_TOLERANCE = 0.05;
-	static const double MIN_LENGTH = 100;
-	
 	// precompute NN search index
 	Mat ymat(ys.size(), 2, CV_64F);
 	for (int y = 0; y < ys.size(); ++y)
@@ -217,7 +216,7 @@ bool getTransform(const Stars & xs, const Stars & ys, Mat & bestTrans)
 		const Line & xline = xl[i];
 		double xlen = xline.length;
 		
-		if (xlen < MIN_LENGTH)
+		if (xlen < opt.minLineLength)
 			break;
 
 		// bisect -> find estimate
@@ -235,7 +234,7 @@ bool getTransform(const Stars & xs, const Stars & ys, Mat & bestTrans)
 		// find upper && lower bound
 		int estimate = lo;
 		int estlo = estimate, esthi = estimate;
-		double tolerance = xlen * LENGTH_TOLERANCE;
+		double tolerance = xlen * opt.relativeLengthTolerance;
 		while (estlo >= 0 && yl[estlo].length + tolerance >= xlen)
 			--estlo;
 		while (esthi < yl.size() && yl[esthi].length - tolerance <= xlen)
@@ -248,7 +247,7 @@ bool getTransform(const Stars & xs, const Stars & ys, Mat & bestTrans)
 			if (lo > estlo)
 			{
 				Mat trans = getLineTransform(xline, yl[lo]);
-				double score = evaluate(trans, xs, yindex);
+				double score = evaluate(trans, xs, yindex, opt);
 				if (score > bestScore)
 				{
 					bestScore = score;
@@ -260,7 +259,7 @@ bool getTransform(const Stars & xs, const Stars & ys, Mat & bestTrans)
 			if (hi < esthi)
 			{
 				Mat trans = getLineTransform(xline, yl[hi]);
-				double score = evaluate(trans, xs, yindex);
+				double score = evaluate(trans, xs, yindex, opt);
 				if (score > bestScore)
 				{
 					bestScore = score;
@@ -274,7 +273,7 @@ bool getTransform(const Stars & xs, const Stars & ys, Mat & bestTrans)
 		}
 	}
 
-	cout << "Best score is " << 100-bestScore << " at offset " << bestOfs << endl;
+	cout << "Best score is " << opt.starDistCutoff-bestScore << " at offset " << bestOfs << endl;
 	return (bestScore > 0);
 };
 
@@ -403,7 +402,7 @@ Mat merge(const vector<string> & fn, int a, int b, const Options & opt)
 	findStars(l, lstars, opt.threshold);
 	findStars(r, rstars, opt.threshold);
 	Mat trans;
-	bool ret = getTransform(lstars, rstars, trans);
+	bool ret = getTransform(lstars, rstars, trans, opt);
 	if (!ret) {
 		cout << "Could not align images!" << endl;
 		return l; // no transform could be found -> return (arbitrarily) the left child
@@ -426,6 +425,10 @@ int main(int argc, char ** argv)
 	Options opt;
 	opt.threshold = 128;
 	opt.subsample = 0.3;
+	opt.minLineLength = 100;
+	opt.percentStarsRequired = 50;
+	opt.relativeLengthTolerance = 0.05;
+	opt.starDistCutoff = 100;
 
 	// get the options
 	while (argv < end)
