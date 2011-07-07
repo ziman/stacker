@@ -20,6 +20,7 @@ struct Options
 	int percentStarsRequired;
 	float starDistCutoff;
 	int starCount;
+	string outfile;
 };
 
 struct Star
@@ -378,6 +379,11 @@ void normalize(Mat & mat)
 	int var = sqdiff / N;
 	int sigma = lround(sqrt(var));
 	
+	/*
+	Scalar mean, sigma;
+	meanStdDev(mat, mean, sigma);
+	*/
+	
 	FOREACH(*row = clamp(255 * ((int) *row - (int) avg) / (16 * sigma)));
 }
 
@@ -462,6 +468,7 @@ int main(int argc, char ** argv)
 	opt.relativeLengthTolerance = 0.05;
 	opt.starDistCutoff = 100;
 	opt.starCount = 15;
+	opt.outfile = "";
 
 	// get the options
 	while (argv < end)
@@ -490,6 +497,8 @@ int main(int argc, char ** argv)
 			opt.starDistCutoff = atof(*argv++);
 		else if (o == "-c")
 			opt.starCount = atoi(*argv++);
+		else if (o == "-o")
+			opt.outfile = *argv++;
 		else 
 			die("unknown option " + o);
 	}
@@ -506,9 +515,19 @@ int main(int argc, char ** argv)
 	// stack the images
 	Mat stack = merge(imgNames, 0, imgNames.size(), opt);
 
-	namedWindow("preview");
-	imshow("preview", stack);
-	waitKey(0);
+	if (opt.outfile == "")
+	{
+		// show the image
+		namedWindow("preview");
+		imshow("preview", stack);
+		waitKey(0);
+	}
+	else
+	{
+		// save the image
+		imwrite(opt.outfile, stack);
+		cout << "Image saved to " << opt.outfile << endl;
+	}
 
 	return 0;
 }
