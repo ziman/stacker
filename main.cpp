@@ -7,6 +7,7 @@
 
 using namespace cv;
 using namespace std;
+using namespace flann;
 
 static const double PI = 3.1415926536;
 
@@ -146,18 +147,70 @@ struct ScanItem
 	{}
 };
 
+double evaluate(const Mat & trans, const Stars & xs, Index_<double> & yindex)
+{
+	Mat q(3, xs.size(), CV_64F);
+	for (int x = 0; x < xs.size(); ++x)
+	{
+		q.at<double>(0, x) = xs[x].x;
+		q.at<double>(1, x) = xs[x].y;
+		q.at<double>(2, x) = 1;
+	}
+	Mat query = trans * q;
+	
+	Mat indices(xs.size(), 1, CV_32S), dists(xs.size(), 1, CV_32F);
+	yindex.knnSearch(query.t(), indices, dists, 1, SearchParams());
+	
+	int cnt = 0;
+	double sum = 0;
+	float CLOSE_ENOUGH = 100;
+	int ENOUGH_STARS = 2 * xs.size() / 3;
+	for (int i = 0; i < dists.rows; ++i)
+	{
+		float dist = dists.at<float>(i, 0);
+		if (dist < CLOSE_ENOUGH) {
+			++cnt;
+			sum += dist;
+		}
+	}
+	
+	if (cnt < ENOUGH_STARS)
+		return 0;
+
+	double avg = sum / cnt;
+	double score = CLOSE_ENOUGH - avg;
+	cout << trans << endl << "==> cnt: " << cnt << ", average: " << avg << ", score: " << score << endl;
+	
+	return score;
+}
+
 Mat getTransform(const Stars & xs, const Stars & ys)
 {
 	static const double LENGTH_TOLERANCE = 5;
+	
+	// precompute NN search index
+	Mat ymat(ys.size(), 2, CV_64F);
+	for (int y = 0; y < ys.size(); ++y)
+	{
+		ymat.at<double>(y, 0) = ys[y].x;
+		ymat.at<double>(y, 1) = ys[y].y;
+	}
+	Index_<double> yindex(ymat, AutotunedIndexParams());
 
+	// find all lines
 	vector<Line> xl, yl;
 	getLines(xs, xl);
 	getLines(ys, yl);
+	
+	// sort the lines
 	sort(xl.rbegin(), xl.rend());
 	sort(yl.begin(), yl.end());
 	
 	cout << "X lines: " << xl.size() << ", Y lines: " << yl.size() << endl;
 
+	Mat bestTrans = Mat::eye(2, 3, CV_64F);
+	double bestScore = 0;
+	
 	for (int i = 0; i < xl.size(); ++i)
 	{
 		const Line & xline = xl[i];
@@ -172,7 +225,7 @@ Mat getTransform(const Stars & xs, const Stars & ys)
 			if (xlen < yl[mid].length)
 				hi = mid;
 			else
-				lo = mid;
+				lo = mid+1;
 		}
 
 		// find upper && lower bound
@@ -183,14 +236,37 @@ Mat getTransform(const Stars & xs, const Stars & ys)
 		while (esthi < yl.size() && yl[esthi].length - LENGTH_TOLERANCE <= xlen)
 			++esthi;
 
+		hi = lo+1;
 		while (lo > estlo || hi < esthi)
 		{
-			Mat trans = getLineTransform(xline, yl[lo]);
-			cout << trans << endl;
+			if (lo > estlo)
+			{
+				Mat trans = getLineTransform(xline, yl[lo]);
+				double score = evaluate(trans, xs, yindex);
+				if (score > bestScore)
+				{
+					bestScore = score;
+					bestTrans = trans;
+				}
+			}
+			
+			if (hi < esthi)
+			{
+				Mat trans = getLineTransform(xline, yl[hi]);
+				double score = evaluate(trans, xs, yindex);
+				if (score > bestScore)
+				{
+					bestScore = score;
+					bestTrans = trans;
+				}
+			}
+			
+			--lo;
+			++hi;
 		}
 	}
 
-	return Mat::eye(2, 3, CV_32F);
+	return bestTrans;
 };
 
 void findBlobs(const Mat & mat, Blobs & blobs)
