@@ -164,7 +164,7 @@ double evaluate(const Mat & trans, const Stars & xs, Index_<double> & yindex)
 	int cnt = 0;
 	double sum = 0;
 	float CLOSE_ENOUGH = 100;
-	int ENOUGH_STARS = 2 * xs.size() / 3;
+	int ENOUGH_STARS = xs.size() / 2;
 	for (int i = 0; i < dists.rows; ++i)
 	{
 		float dist = dists.at<float>(i, 0);
@@ -176,7 +176,7 @@ double evaluate(const Mat & trans, const Stars & xs, Index_<double> & yindex)
 	
 	if (cnt < ENOUGH_STARS)
 	{
-		cout << "Not enough stars: " << cnt << endl;
+		// cout << "Not enough stars: " << cnt << endl;
 		return 0;
 	}
 
@@ -185,7 +185,8 @@ double evaluate(const Mat & trans, const Stars & xs, Index_<double> & yindex)
 
 bool getTransform(const Stars & xs, const Stars & ys, Mat & bestTrans)
 {
-	static const double LENGTH_TOLERANCE = 5;
+	static const double LENGTH_TOLERANCE = 0.05;
+	static const double MIN_LENGTH = 100;
 	
 	// precompute NN search index
 	Mat ymat(ys.size(), 2, CV_64F);
@@ -209,18 +210,15 @@ bool getTransform(const Stars & xs, const Stars & ys, Mat & bestTrans)
 
 	bestTrans = Mat::eye(2, 3, CV_64F);
 	double bestScore = 0;
+	int bestOfs = 0;
 	
 	for (int i = 0; i < xl.size(); ++i)
 	{
 		const Line & xline = xl[i];
 		double xlen = xline.length;
 		
-		// allow up to 10% tolerance
-		if (xlen < LENGTH_TOLERANCE * 10)
-		{
-			cout << "Length tolerance threshold reached." << endl;
+		if (xlen < MIN_LENGTH)
 			break;
-		}
 
 		// bisect -> find estimate
 		int lo = 0;
@@ -237,12 +235,14 @@ bool getTransform(const Stars & xs, const Stars & ys, Mat & bestTrans)
 		// find upper && lower bound
 		int estimate = lo;
 		int estlo = estimate, esthi = estimate;
-		while (estlo >= 0 && yl[estlo].length + LENGTH_TOLERANCE >= xlen)
+		double tolerance = xlen * LENGTH_TOLERANCE;
+		while (estlo >= 0 && yl[estlo].length + tolerance >= xlen)
 			--estlo;
-		while (esthi < yl.size() && yl[esthi].length - LENGTH_TOLERANCE <= xlen)
+		while (esthi < yl.size() && yl[esthi].length - tolerance <= xlen)
 			++esthi;
 
 		hi = lo+1;
+		// cout << " within (" << estlo-estimate << "," << esthi-estimate << ")" << endl;
 		while (lo > estlo || hi < esthi)
 		{
 			if (lo > estlo)
@@ -253,6 +253,7 @@ bool getTransform(const Stars & xs, const Stars & ys, Mat & bestTrans)
 				{
 					bestScore = score;
 					bestTrans = trans;
+					bestOfs = lo - estimate;
 				}
 			}
 			
@@ -264,6 +265,7 @@ bool getTransform(const Stars & xs, const Stars & ys, Mat & bestTrans)
 				{
 					bestScore = score;
 					bestTrans = trans;
+					bestOfs = hi - estimate;
 				}
 			}
 			
@@ -272,7 +274,7 @@ bool getTransform(const Stars & xs, const Stars & ys, Mat & bestTrans)
 		}
 	}
 
-	cout << "Best score is: " << bestScore << endl;
+	cout << "Best score is " << 100-bestScore << " at offset " << bestOfs << endl;
 	return (bestScore > 0);
 };
 
