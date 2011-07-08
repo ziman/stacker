@@ -131,6 +131,12 @@ struct Line
 	Line(const Line& x)
 		: a(x.a), b(x.b), length(x.length)
 	{ }
+	
+	/// Return this line with (a,b) swapped.
+	Line swap()
+	{
+		return Line(b,a);
+	}
 };
 
 bool operator<(const Line & l, const Line & r)
@@ -281,13 +287,22 @@ bool getTransform(const Stars & xs, const Stars & ys, Mat & bestTrans, const Opt
 		// traverse all lines within the tolerance
 		for (int i = estlo+1; i < esthi; ++i)
 		{
-			Mat trans = getLineTransform(xline, yl[lo]);
+			Mat trans = getLineTransform(xline, yl[i]);
 			double score = evaluate(trans, xs, yindex, opt);
 			if (score > bestScore)
 			{
 				bestScore = score;
 				bestTrans = trans;
-				bestOfs = lo - estimate;
+				bestOfs = i - estimate;
+			}
+			
+			trans = getLineTransform(xline, yl[i].swap());
+			score = evaluate(trans, xs, yindex, opt);
+			if (score > bestScore)
+			{
+				bestScore = score;
+				bestTrans = trans;
+				bestOfs = i - estimate;
 			}
 		}
 	}
