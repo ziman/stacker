@@ -394,11 +394,16 @@ void findStars(const Mat & srcimg, Stars & stars, int thresh, int limit)
 	}
 }
 
-#define FOREACH(st) \
+inline float clamp(double x)
+{
+	return (x < 0) ? 0 : ((x > 1.0) ? 1.0 : x);
+}
+
+#define FOREACH(T, st) \
 	for (int y = 0; y < mat.rows; ++y) 			\
 	{							\
-		uint8_t * row = mat.ptr<uint8_t>(y);	\
-		const uint8_t * end = row + mat.cols;		\
+		T * row = mat.ptr<T>(y);	\
+		const T * end = row + mat.cols;		\
 		while (row < end) {				\
 			st;				\
 			++row;					\
@@ -406,7 +411,34 @@ void findStars(const Mat & srcimg, Stars & stars, int thresh, int limit)
 	}
 void normalize(Mat & mat)
 {
-	FOREACH(*row = *row ? lround(31 * log2(*row)) : 0);
+	// calculate sum of the pixels
+	double sum = 0;
+	FOREACH(float, sum += *row);
+
+	// calculate average
+	int N = mat.rows * mat.cols;
+	double avg = sum / N;
+	
+	// calculate quadratic error
+	double sqdiff = 0;
+	FOREACH(float, sqdiff += (avg-*row) * (avg-*row));
+	
+	// calculate variance and standard deviation
+	double var = sqdiff / N;
+	double sigma = lround(sqrt(var));
+	
+	/*
+	Scalar mean, sigma;
+	meanStdDev(mat, mean, sigma);
+	*/
+	
+	// scale the image to cover (mu..mu+16*sigma)
+	FOREACH(float, *row = clamp(avg + (*row-avg) / (16 * sigma)));
+}
+
+void logarithmize(Mat & mat)
+{
+	FOREACH(uchar, *row = *row ? lround(31 * log2(*row)) : 0);
 }
 
 /// Find all stars using an adaptive threshold.
@@ -473,16 +505,16 @@ Mat floatify(const Mat & img)
 
 Mat merge(const vector<string> & fn, Options & opt)
 {
-	// load the middle image
 	int mid = fn.size() / 2;
+
+	// load the middle image
 	Mat mimg = load(fn[mid], opt);
-	
-	// convert to float
 	Mat merged = floatify(mimg);
+	logarithmize(mimg);
+	normalize(merged);
 	
 	// find its stars
 	Stars mstars;
-	normalize(mimg);
 	findStarsThresh(mimg, mstars, opt);
 	
 	// precompute NN search index
@@ -509,7 +541,8 @@ Mat merge(const vector<string> & fn, Options & opt)
 		// load the image
 		Mat inorm = load(fn[i], opt);
 		Mat img = floatify(inorm);
-		normalize(inorm);
+		logarithmize(inorm);
+		normalize(img);
 		
 		// find stars
 		Stars stars;
