@@ -511,6 +511,24 @@ Mat merge(const vector<string> & fn, int a, int b, Options & opt)
 	return (0.5*lremap + 0.5*r);
 }
 
+/// Print usage information and quit.
+void usage()
+{
+	cout
+		<< "usage: ./align [options] image1 image2 ... imagen" << endl
+		<< endl
+		<< "Options:" << endl
+		<< "  -s <factor>  : scale the image by the given factor (default = 0.5)" << endl
+		<< "  -l <length>  : minimum line length to be taken in account (default = 100)" << endl
+		<< "  -p <percent> : portion of stars required to match between images (default = 66)" << endl
+		<< "  -t <factor>  : maximum relative length error between two matching lines (default = 0.01)" << endl
+		<< "  -d <pixels>  : maximum distance between two matching stars (default = 10)" << endl
+		<< "  -c <count>   : approximate target star count after thresholding (default = 20)" << endl
+		<< "  -o <imgname> : write the result here, instead of displaying it" << endl
+		;
+	exit(1);
+}
+
 int main(int argc, char ** argv)
 {
 	char ** end =  argv + argc;
@@ -557,7 +575,7 @@ int main(int argc, char ** argv)
 		else if (o == "-o")
 			opt.outfile = *argv++;
 		else 
-			die("unknown option " + o);
+			usage();
 	}
 
 	// get the list of images
