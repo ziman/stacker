@@ -234,18 +234,26 @@ bool getTransform(const Stars & xs, const Stars & ys, Mat & bestTrans, const Opt
 		ymat.at<double>(y, 0) = ys[y].x;
 		ymat.at<double>(y, 1) = ys[y].y;
 	}
-	Index_<double> yindex(ymat, AutotunedIndexParams());
+	Index_<double> yindex(ymat, KDTreeIndexParams(4));
 
 	// find all lines
 	vector<Line> xl, yl;
 	getLines(xs, xl);
 	getLines(ys, yl);
 	
+	// we want at least one line
+	if (xl.size() < 1 || yl.size() < 1)
+	{
+		cout << "No lines." << endl;
+		return false;
+	}
+	
 	// sort the lines
 	sort(xl.rbegin(), xl.rend());
 	sort(yl.begin(), yl.end());
 	
-	cout << "X lines: " << xl.size() << ", Y lines: " << yl.size() << endl;
+	// cout << "X stars: " << xs.size() << ", Y stars: " << ys.size() << endl;
+	// cout << "X lines: " << xl.size() << ", Y lines: " << yl.size() << endl;
 
 	bestTrans = Mat::eye(2, 3, CV_64F);
 	double bestScore = 0;
@@ -312,7 +320,7 @@ bool getTransform(const Stars & xs, const Stars & ys, Mat & bestTrans, const Opt
 };
 
 /// Find all blobs in a thresholded image.
-void findBlobs(const Mat & mat, Blobs & blobs)
+void findBlobs(const Mat & mat, Blobs & blobs, int limit)
 {
 	//cout << "depth: " << mat.depth() << ", type: " << mat.type() << ", chans: " << mat.channels() << endl;
 	
@@ -330,6 +338,12 @@ void findBlobs(const Mat & mat, Blobs & blobs)
 			{
 				blobs.push_back(it->blob);
 				++it;
+				
+				if (blobs.size() > limit)
+				{
+					// this sample will be rejected anyway -> save CO2
+					return;
+				}
 			}
 
 			// find the end of the white segment
@@ -347,6 +361,12 @@ void findBlobs(const Mat & mat, Blobs & blobs)
 					++it;
 				}
 				newscan.push_back(ScanItem(l,x-1,cur));
+				
+				if (newscan.size() > limit)
+				{
+					// this threshold will be rejected anyway
+					return;
+				}
 			}
 
 			l = ++x;
@@ -364,7 +384,7 @@ void findBlobs(const Mat & mat, Blobs & blobs)
 }
 
 /// Find all stars in the given image.
-void findStars(const Mat & srcimg, Stars & stars, int thresh)
+void findStars(const Mat & srcimg, Stars & stars, int thresh, int limit)
 {
 	// threshold the image
 	Mat image;
@@ -372,7 +392,7 @@ void findStars(const Mat & srcimg, Stars & stars, int thresh)
 
 	// find the blobs
 	Blobs blobs;
-	findBlobs(image, blobs);
+	findBlobs(image, blobs, limit);
 
 	// traverse the blobs
 	stars.clear();
@@ -401,6 +421,7 @@ inline uint8_t clamp(int x)
 /// Normalize the image brightness and contrast.
 void normalize(Mat & mat)
 {
+	/*
 	// calculate sum of the pixels
 	int sum = 0;
 	FOREACH(sum += *row);
@@ -416,14 +437,17 @@ void normalize(Mat & mat)
 	// calculate variance and standard deviation
 	int var = sqdiff / N;
 	int sigma = lround(sqrt(var));
+	*/
 	
 	/*
 	Scalar mean, sigma;
 	meanStdDev(mat, mean, sigma);
 	*/
 	
-	// scale the image to cover (mu..mu+16*sigma)
-	FOREACH(*row = clamp(255 * ((int) *row - (int) avg) / (16 * sigma)));
+	// scale the image to cover (mu..mu+32*sigma)
+	//FOREACH(*row = clamp(255 * ((int) *row - (int) avg) / (32 * sigma)));
+	
+	FOREACH(*row = lround(31 * log2(*row)));
 }
 
 /// Find all stars using an adaptive threshold.
@@ -441,19 +465,20 @@ void findStarsThresh(const Mat & srcimg, Stars & stars, Options & opt)
 		lo = 2*oldThresh - 256;
 	
 	int thresh = oldThresh;
-	while (lo < hi) {
+	while (lo+1 < hi) {
 		// estimate threshold
 		stars.clear();
 		int cnt = 0;
 		thresh = (hi+lo) / 2;
 		
 		// calculate the number of stars
-		findStars(srcimg, stars, thresh);
+		findStars(srcimg, stars, thresh, 2 * opt.starCount);
 		cnt = stars.size();
 		
 		// roughly required number -> done
 		if (abs(cnt - opt.starCount) < opt.starCount/5)
 		{
+			// cout << "thresholding by " << thresh << endl;
 			opt.threshold = thresh;
 			return;
 		}
@@ -466,7 +491,7 @@ void findStarsThresh(const Mat & srcimg, Stars & stars, Options & opt)
 		//cout << "Threshold auto-estimated at " << oldThresh << endl;
 	}
 
-	//cout << "Threshold out of range: " << thresh << endl;
+	//cout << "thresholding by " << thresh << endl;
 	opt.threshold = thresh;
 }
 
@@ -554,9 +579,7 @@ int main(int argc, char ** argv)
 		if (o == "--")
 			break;
 		
-		if (o == "-t")
-			opt.threshold = atoi(*argv++);
-		else if (o == "-s")
+		if (o == "-s")
 			opt.subsample = atof(*argv++);
 		else if (o == "-l")
 			opt.minLineLength = atof(*argv++);
