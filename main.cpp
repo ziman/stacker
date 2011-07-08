@@ -47,6 +47,7 @@ struct Options
 	int percentStarsRequired; ///< The minimum per cent of stars matched between two images.
 	float starDistCutoff; ///< Maximum px distance between two stars to be considered identical.
 	int starCount; ///< Calculate with (roughly) this number of brightest stars in the images.
+	float normalizeSd; ///< how many standard deviations the image should contain
 	string outfile; ///< Destination image file name. Leave empty to display directly.
 };
 
@@ -305,7 +306,7 @@ bool getTransform(const Stars & xs, Index_<double> & yindex, const vector<Line> 
 	}
 
 	if (bestScore > 0)
-		cout << "OK (score " << opt.starDistCutoff-bestScore << " at offset " << bestOfs << ")" << endl;
+		cout << "OK (avg dist " << opt.starDistCutoff-bestScore << " at offset " << bestOfs << ")" << endl;
 	else
 		cout << "FAIL, skipping" << endl;
 	return (bestScore > 0);
@@ -394,11 +395,6 @@ void findStars(const Mat & srcimg, Stars & stars, int thresh, int limit)
 	}
 }
 
-inline float clamp(double x)
-{
-	return (x < 0) ? 0 : ((x > 1.0) ? 1.0 : x);
-}
-
 #define FOREACH(T, st) \
 	for (int y = 0; y < mat.rows; ++y) 			\
 	{							\
@@ -409,33 +405,6 @@ inline float clamp(double x)
 			++row;					\
 		}						\
 	}
-void normalize(Mat & mat)
-{
-	// calculate sum of the pixels
-	double sum = 0;
-	FOREACH(float, sum += *row);
-
-	// calculate average
-	int N = mat.rows * mat.cols;
-	double avg = sum / N;
-	
-	// calculate quadratic error
-	double sqdiff = 0;
-	FOREACH(float, sqdiff += (avg-*row) * (avg-*row));
-	
-	// calculate variance and standard deviation
-	double var = sqdiff / N;
-	double sigma = lround(sqrt(var));
-	
-	/*
-	Scalar mean, sigma;
-	meanStdDev(mat, mean, sigma);
-	*/
-	
-	// scale the image to cover (mu..mu+16*sigma)
-	FOREACH(float, *row = clamp(avg + (*row-avg) / (16 * sigma)));
-}
-
 void logarithmize(Mat & mat)
 {
 	FOREACH(uchar, *row = *row ? lround(31 * log2(*row)) : 0);
@@ -503,15 +472,50 @@ Mat floatify(const Mat & img)
 	return result;
 }
 
+struct MergeItem
+{
+	string fname;
+	Mat trans;
+};
+
+struct Merged
+{
+	Mat image;
+	double weight;
+};
+
+Merged remap(const vector<MergeItem> & items, int lo, int hi, const Options & opt)
+{
+	// load single image
+	if (lo+1 == hi)
+	{
+		Mat img = floatify(load(items[lo].fname, opt));
+		//normalize(img, opt.normalizeSd);
+		Merged m;
+		m.weight = 1;
+		warpAffine(img, m.image, items[lo].trans, img.size());
+		cout << "REMAPPED" << endl;
+		return m;
+	}
+	
+	// remap the original image
+	int mid = (lo + hi) / 2;
+	Merged l = remap(items, lo, mid, opt);
+	Merged r = remap(items, mid, hi, opt);
+	
+	Merged m;
+	m.weight = l.weight + r.weight;
+	m.image = (l.weight / m.weight)*l.image + (r.weight / m.weight)*r.image;
+	return m;
+}
+
 Mat merge(const vector<string> & fn, Options & opt)
 {
 	int mid = fn.size() / 2;
 
 	// load the middle image
 	Mat mimg = load(fn[mid], opt);
-	Mat merged = floatify(mimg);
 	logarithmize(mimg);
-	normalize(merged);
 	
 	// find its stars
 	Stars mstars;
@@ -533,20 +537,18 @@ Mat merge(const vector<string> & fn, Options & opt)
 	
 	cout << "preprocessed." << endl;
 	
-	double n = 0;
+	vector<MergeItem> mergeItems;
 	for (int i = 0; i < fn.size(); ++i)
 	{
 		if (i == mid) continue;
 		
 		// load the image
-		Mat inorm = load(fn[i], opt);
-		Mat img = floatify(inorm);
-		logarithmize(inorm);
-		normalize(img);
+		Mat img = load(fn[i], opt);
+		logarithmize(img);
 		
 		// find stars
 		Stars stars;
-		findStarsThresh(inorm, stars, opt);
+		findStarsThresh(img, stars, opt);
 		
 		// calculate the transformation
 		Mat trans;
@@ -554,16 +556,14 @@ Mat merge(const vector<string> & fn, Options & opt)
 		if (!ret)
 			continue;
 		
-		// remap the original image
-		Mat lremap;
-		warpAffine(img, lremap, trans, mimg.size());
-		
-		// merge the images
-		n += 1;
-		merged = (1 - 1/n) * merged + (1/n) * lremap;
+		MergeItem item;
+		item.fname = fn[i];
+		item.trans = trans;
+		mergeItems.push_back(item);
 	}
 	
-	return merged;
+	cout << "Remapping images..." << endl;
+	return remap(mergeItems, 0, mergeItems.size(), opt).image;
 }
 
 /// Print usage information and quit.
@@ -579,6 +579,7 @@ void usage()
 		<< "  -t <factor>  : maximum relative length error between two matching lines (default = 0.01)" << endl
 		<< "  -d <pixels>  : maximum distance between two matching stars (default = 10)" << endl
 		<< "  -c <count>   : approximate target star count after thresholding (default = 20)" << endl
+		<< "  -n <sd's>    : the number of SDs the image should contain (default = 16)" << endl
 		<< "  -o <imgname> : write the result here, instead of displaying it" << endl
 		;
 	exit(1);
@@ -598,6 +599,7 @@ int main(int argc, char ** argv)
 	opt.relativeLengthTolerance = 0.01;
 	opt.starDistCutoff = 10;
 	opt.starCount = 20;
+	opt.normalizeSd = 16;
 	opt.outfile = "";
 
 	// get the options
@@ -627,6 +629,8 @@ int main(int argc, char ** argv)
 			opt.starCount = atoi(*argv++);
 		else if (o == "-o")
 			opt.outfile = *argv++;
+		else if (o == "-n")
+			opt.normalizeSd = atof(*argv++);
 		else 
 			usage();
 	}
@@ -641,19 +645,21 @@ int main(int argc, char ** argv)
 		die("no point in aligning less than two images");
 
 	// stack the images
+	Mat stout;
 	Mat stack = merge(imgNames, opt);
+	normalize(stack, stout, 255, 0);
 
 	if (opt.outfile == "")
 	{
 		// show the image
 		namedWindow("preview");
-		imshow("preview", stack);
+		imshow("preview", stout);
 		waitKey(0);
 	}
 	else
 	{
 		// save the image
-		imwrite(opt.outfile, stack);
+		imwrite(opt.outfile, stout);
 		cout << "Image saved to " << opt.outfile << endl;
 	}
 
