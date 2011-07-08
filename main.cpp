@@ -461,8 +461,14 @@ Mat load(const string & fn, const Options & opt)
 	Mat full = imread(fn, CV_LOAD_IMAGE_GRAYSCALE);
 	Mat subsampled;
 	resize(full, subsampled, Size(0,0), opt.subsample, opt.subsample);
-	normalize(subsampled);
 	return subsampled;
+}
+
+Mat floatify(const Mat & img)
+{
+	Mat result;
+	img.convertTo(result, CV_32F, 1/255.0, 0);
+	return result;
 }
 
 Mat merge(const vector<string> & fn, Options & opt)
@@ -471,8 +477,12 @@ Mat merge(const vector<string> & fn, Options & opt)
 	int mid = fn.size() / 2;
 	Mat mimg = load(fn[mid], opt);
 	
+	// convert to float
+	Mat merged = floatify(mimg);
+	
 	// find its stars
 	Stars mstars;
+	normalize(mimg);
 	findStarsThresh(mimg, mstars, opt);
 	
 	// precompute NN search index
@@ -496,23 +506,31 @@ Mat merge(const vector<string> & fn, Options & opt)
 	{
 		if (i == mid) continue;
 		
-		Mat img = load(fn[i], opt);
-		Stars stars;
-		findStarsThresh(img, stars, opt);
+		// load the image
+		Mat inorm = load(fn[i], opt);
+		Mat img = floatify(inorm);
+		normalize(inorm);
 		
+		// find stars
+		Stars stars;
+		findStarsThresh(inorm, stars, opt);
+		
+		// calculate the transformation
 		Mat trans;
 		bool ret = getTransform(stars, yindex, ylines, trans, opt);
 		if (!ret)
 			continue;
 		
+		// remap the original image
 		Mat lremap;
 		warpAffine(img, lremap, trans, mimg.size());
 		
+		// merge the images
 		n += 1;
-		mimg = (1 - 1/n) * mimg + (1/n) * lremap;
+		merged = (1 - 1/n) * merged + (1/n) * lremap;
 	}
 	
-	return mimg;
+	return merged;
 }
 
 /// Print usage information and quit.
