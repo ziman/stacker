@@ -657,7 +657,7 @@ int main(int argc, char ** argv)
 	// stack the images
 	Mat stout;
 	Mat stack = merge(imgNames, opt);
-	normalize(stack, stout, 255, 0);
+	normalize(stack, stout, 65535, 0);
 	/*
 	double alpha = 255.0 / (opt.hto - opt.hfrom);
 	double beta = - opt.hfrom * alpha;
