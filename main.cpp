@@ -37,22 +37,24 @@ using namespace flann;
 
 static const double PI = 3.1415926536;
 
+/** Commandline options. */
 struct Options
 {
-	int threshold;
-	double subsample; // 0..1 -> size on load
-	float minLineLength;
-	float relativeLengthTolerance;
-	int percentStarsRequired;
-	float starDistCutoff;
-	int starCount;
-	string outfile;
+	int threshold; ///< Threshold estimate. Not very important, used only for speedup of estimation.
+	double subsample; ///< Within [0.0 .. 1.0], factor to resize loaded images to.
+	float minLineLength; ///< Discard all lines shorter than this.
+	float relativeLengthTolerance; ///< Maximum relative length difference between two lines to be considered identical.
+	int percentStarsRequired; ///< The minimum per cent of stars matched between two images.
+	float starDistCutoff; ///< Maximum px distance between two stars to be considered identical.
+	int starCount; ///< Calculate with (roughly) this number of brightest stars in the images.
+	string outfile; ///< Destination image file name. Leave empty to display directly.
 };
 
+/** A star in the image. */
 struct Star
 {
-	double x, y;
-	double r;
+	double x, y; // position
+	double r; // radius
 
 	Star(double x, double y, double r)
 	{
@@ -63,22 +65,22 @@ struct Star
 	
 	Star(const Star &s)
 		: x(s.x), y(s.y), r(s.r)
-	{
-	}
+	{}
 };
 
+/** A blob in the image. */
 struct Blob
 {
 	double x, y;
 	double S;
 };
 
+/// Combine two blobs.
 Blob operator+(const Blob & l, const Blob & r)
 {
 	Blob q;
 	q.S = l.S + r.S;
 	q.x = (l.S*l.x + r.S*r.x) / q.S;
-
 	q.y = (l.S*l.y + r.S*r.y) / q.S;
 }
 
@@ -90,19 +92,10 @@ Blob & operator+=(Blob & blob, const Blob & x)
 	blob.S = S;
 }
 
-bool operator<(const Star & l, const Star & r)
-{
-	if (l.r < r.r)
-		return true;
-	if (l.r > r.r)
-		return false;
-
-	return (l.x < r.x);
-}
-
 typedef vector<Star> Stars;
 typedef vector<Blob> Blobs;
 
+/// Print error message and quit.
 void die(const string & msg)
 {
 	cerr << "Error: " << msg << endl;
@@ -114,6 +107,7 @@ inline double sqr(double x)
 	return x*x;
 }
 
+/// Create a third point, perpendicular to UV.
 Point2f controlPoint(const Point2f & u, const Point2f & v)
 {
 	double dx = v.x - u.x;
@@ -122,6 +116,7 @@ Point2f controlPoint(const Point2f & u, const Point2f & v)
 	return Point2f(u.x - dy, u.y + dx);
 }
 
+/// A line in the image.
 struct Line
 {
 	Star a, b;
@@ -135,8 +130,7 @@ struct Line
 	
 	Line(const Line& x)
 		: a(x.a), b(x.b), length(x.length)
-	{
-	}
+	{ }
 };
 
 bool operator<(const Line & l, const Line & r)
@@ -144,6 +138,7 @@ bool operator<(const Line & l, const Line & r)
 	return (l.length < r.length);
 }
 
+/// Create a line from each pair of stars.
 void getLines(const Stars & stars, vector<Line> & lines)
 {
 	for (int i = 0; i < stars.size(); ++i)
@@ -155,6 +150,7 @@ void getLines(const Stars & stars, vector<Line> & lines)
 	}
 }
 
+/// Calculate affine matrix transform between two lines.
 Mat getLineTransform(const Line & a, const Line & b)
 {
 	Point2f xp[3], yp[3];
@@ -169,41 +165,50 @@ Mat getLineTransform(const Line & a, const Line & b)
 	return getAffineTransform(xp, yp);
 }
 
+/// Scan item for blob search.
 struct ScanItem
 {
 	Blob blob;
-	int l, r;
+	int l, r; // leftmost & rightmost x-index of pixels of the blob on the previous scanline
 
 	ScanItem(int _l, int _r, const Blob & _b)
 		: l(_l), r(_r), blob(_b)
 	{}
 };
 
+/// Return a number representing the fitness of the given transformation. Higher is better.
 double evaluate(const Mat & trans, const Stars & xs, Index_<double> & yindex, const Options & opt)
 {
-	Mat q(3, xs.size(), CV_64F);
+	// create the query matrix containing all stars from xs
+	Mat q(xs.size(), 3, CV_64F);
 	for (int x = 0; x < xs.size(); ++x)
 	{
-		q.at<double>(0, x) = xs[x].x;
-		q.at<double>(1, x) = xs[x].y;
-		q.at<double>(2, x) = 1;
+		q.at<double>(x,0) = xs[x].x;
+		q.at<double>(x,1) = xs[x].y;
+		q.at<double>(x,2) = 1;
 	}
-	Mat query = trans * q;
 	
+	// transform the query using the transformation in question
+	Mat query = q * trans.t();
+	
+	// for each transformed star, find its nearest neighbor
 	Mat indices(xs.size(), 1, CV_32S), dists(xs.size(), 1, CV_32F);
 	yindex.knnSearch(query.t(), indices, dists, 1, SearchParams());
 	
+	// evaluate the nearest-neighbor assignment
 	int cnt = 0;
 	double sum = 0;
 	for (int i = 0; i < dists.rows; ++i)
 	{
 		float dist = dists.at<float>(i, 0);
 		if (dist < opt.starDistCutoff) {
+			// if the counterparts are close enough, register 'em
 			++cnt;
 			sum += dist;
 		}
 	}
 	
+	// if not enough stars, quit
 	if (cnt < opt.percentStarsRequired * xs.size() / 100)
 	{
 		// cout << "Not enough stars: " << cnt << endl;
@@ -213,6 +218,7 @@ double evaluate(const Mat & trans, const Stars & xs, Index_<double> & yindex, co
 	return opt.starDistCutoff - sum/cnt;
 }
 
+/// Get the best transformation that transforms xs closest to ys.
 bool getTransform(const Stars & xs, const Stars & ys, Mat & bestTrans, const Options & opt)
 {
 	// precompute NN search index
@@ -239,17 +245,19 @@ bool getTransform(const Stars & xs, const Stars & ys, Mat & bestTrans, const Opt
 	double bestScore = 0;
 	int bestOfs = 0;
 	
+	// for each source line
 	for (int i = 0; i < xl.size(); ++i)
 	{
+		// consider its length
 		const Line & xline = xl[i];
 		double xlen = xline.length;
 		
 		if (xlen < opt.minLineLength)
-			break;
+			break; // too short to be precise enough and only shorter ones will follow
 		
 		// cout << "Line length: " << xlen << endl;
 
-		// bisect -> find estimate
+		// bisect -> find the nearest counterpart in yl
 		int lo = 0;
 		int hi = yl.size() - 1;
 		while (lo < hi)
@@ -261,7 +269,7 @@ bool getTransform(const Stars & xs, const Stars & ys, Mat & bestTrans, const Opt
 				lo = mid+1;
 		}
 
-		// find upper && lower bound
+		// find upper && lower bound within the tolerance
 		int estimate = lo;
 		int estlo = estimate, esthi = estimate;
 		double tolerance = xlen * opt.relativeLengthTolerance;
@@ -270,8 +278,8 @@ bool getTransform(const Stars & xs, const Stars & ys, Mat & bestTrans, const Opt
 		while (esthi < yl.size() && yl[esthi].length - tolerance <= xlen)
 			++esthi;
 
+		// traverse all lines within the tolerance, beginning from the middle
 		hi = lo+1;
-		// cout << " within (" << estlo-estimate << "," << esthi-estimate << ")" << endl;
 		while (lo > estlo || hi < esthi)
 		{
 			if (lo > estlo)
@@ -307,9 +315,12 @@ bool getTransform(const Stars & xs, const Stars & ys, Mat & bestTrans, const Opt
 	return (bestScore > 0);
 };
 
+/// Find all blobs in a thresholded image.
 void findBlobs(const Mat & mat, Blobs & blobs)
 {
 	//cout << "depth: " << mat.depth() << ", type: " << mat.type() << ", chans: " << mat.channels() << endl;
+	
+	// traverse all scanlines
 	list<ScanItem> scan, newscan;
 	for (int y = 0; y < mat.rows; ++y)
 	{
@@ -348,6 +359,7 @@ void findBlobs(const Mat & mat, Blobs & blobs)
 		newscan.clear();
 	}
 
+	// flush all unfinished blobs
 	for (list<ScanItem>::const_iterator it = scan.begin(); it != scan.end(); ++it)
 
 	{
@@ -355,6 +367,7 @@ void findBlobs(const Mat & mat, Blobs & blobs)
 	}
 }
 
+/// Find all stars in the given image.
 void findStars(const Mat & srcimg, Stars & stars, int thresh)
 {
 	// threshold the image
@@ -373,6 +386,7 @@ void findStars(const Mat & srcimg, Stars & stars, int thresh)
 	}
 }
 
+/// Clamp the given value to 0..255.
 inline uint8_t clamp(int x)
 {
 	return (x < 0) ? 0 : ((x > 255) ? 255 : x);
@@ -388,16 +402,22 @@ inline uint8_t clamp(int x)
 			++row;					\
 		}						\
 	}
+/// Normalize the image brightness and contrast.
 void normalize(Mat & mat)
 {
+	// calculate sum of the pixels
 	int sum = 0;
 	FOREACH(sum += *row);
 
+	// calculate average
 	int N = mat.rows * mat.cols;
 	int avg = sum / N;
+	
+	// calculate quadratic error
 	int sqdiff = 0;
 	FOREACH(sqdiff += (avg-*row) * (avg-*row));
 	
+	// calculate variance and standard deviation
 	int var = sqdiff / N;
 	int sigma = lround(sqrt(var));
 	
@@ -406,32 +426,42 @@ void normalize(Mat & mat)
 	meanStdDev(mat, mean, sigma);
 	*/
 	
+	// scale the image to cover (mu..mu+16*sigma)
 	FOREACH(*row = clamp(255 * ((int) *row - (int) avg) / (16 * sigma)));
 }
 
+/// Find all stars using an adaptive threshold.
 void findStarsThresh(const Mat & srcimg, Stars & stars, Options & opt)
 {
+	// threshold estimate
 	int oldThresh = (opt.threshold == -1) ? 128 : opt.threshold;
+	
+	// binary search bounds
 	int lo = 0;
 	int hi = 255;
 	if (oldThresh < 128)
 		hi = 2*oldThresh;
 	else
 		lo = 2*oldThresh - 256;
-	int thresh = oldThresh;
 	
+	int thresh = oldThresh;
 	while (lo < hi) {
+		// estimate threshold
 		stars.clear();
 		int cnt = 0;
 		thresh = (hi+lo) / 2;
 		
+		// calculate the number of stars
 		findStars(srcimg, stars, thresh);
 		cnt = stars.size();
+		
+		// roughly required number -> done
 		if (abs(cnt - opt.starCount) < opt.starCount/5)
 		{
 			opt.threshold = thresh;
 			return;
 		}
+		// adjust the threshold
 		else if (cnt < opt.starCount)
 			hi = thresh;
 		else
@@ -444,6 +474,7 @@ void findStarsThresh(const Mat & srcimg, Stars & stars, Options & opt)
 	opt.threshold = thresh;
 }
 
+/// Merge the range of files beginning with a; b being the first untouched index.
 Mat merge(const vector<string> & fn, int a, int b, Options & opt)
 {
 	if (a+1 >= b)
@@ -463,7 +494,6 @@ Mat merge(const vector<string> & fn, int a, int b, Options & opt)
 
 	// align the images
 	Stars lstars, rstars;
-	
 	findStarsThresh(l, lstars, opt);
 	findStarsThresh(r, rstars, opt);
 	Mat trans;
