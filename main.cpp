@@ -207,7 +207,7 @@ bool getTransform(const Stars & xs, const Stars & ys, Mat & bestTrans, const Opt
 	sort(xl.rbegin(), xl.rend());
 	sort(yl.begin(), yl.end());
 	
-	// cout << "X lines: " << xl.size() << ", Y lines: " << yl.size() << endl;
+	cout << "X lines: " << xl.size() << ", Y lines: " << yl.size() << endl;
 
 	bestTrans = Mat::eye(2, 3, CV_64F);
 	double bestScore = 0;
@@ -220,6 +220,8 @@ bool getTransform(const Stars & xs, const Stars & ys, Mat & bestTrans, const Opt
 		
 		if (xlen < opt.minLineLength)
 			break;
+		
+		// cout << "Line length: " << xlen << endl;
 
 		// bisect -> find estimate
 		int lo = 0;
@@ -387,6 +389,41 @@ void normalize(Mat & mat)
 	FOREACH(*row = clamp(255 * ((int) *row - (int) avg) / (16 * sigma)));
 }
 
+void findStarsThresh(const Mat & srcimg, Stars & stars, Options & opt)
+{
+	int oldThresh = (opt.threshold == -1) ? 128 : opt.threshold;
+	int lo = 0;
+	int hi = 255;
+	if (oldThresh < 128)
+		hi = 2*oldThresh;
+	else
+		lo = 2*oldThresh - 256;
+	int thresh = oldThresh;
+	
+	while (lo < hi) {
+		stars.clear();
+		int cnt = 0;
+		thresh = (hi+lo) / 2;
+		
+		findStars(srcimg, stars, thresh);
+		cnt = stars.size();
+		if (abs(cnt - opt.starCount) < opt.starCount/5)
+		{
+			opt.threshold = thresh;
+			return;
+		}
+		else if (cnt < opt.starCount)
+			hi = thresh;
+		else
+			lo = thresh;
+		
+		//cout << "Threshold auto-estimated at " << oldThresh << endl;
+	}
+
+	//cout << "Threshold out of range: " << thresh << endl;
+	opt.threshold = thresh;
+}
+
 Mat merge(const vector<string> & fn, int a, int b, Options & opt)
 {
 	if (a+1 >= b)
@@ -407,38 +444,8 @@ Mat merge(const vector<string> & fn, int a, int b, Options & opt)
 	// align the images
 	Stars lstars, rstars;
 	
-	if (opt.threshold == -1)
-	{ // autodetect threshold
-		lstars.clear();
-		int thresh = 128;
-		int cnt = 0;
-		while (true) {
-			findStars(l, lstars, thresh);
-			cnt = lstars.size();
-			if (abs(cnt - opt.starCount) < opt.starCount/5)
-				break;
-			else if (cnt < opt.starCount)
-				thresh = thresh / 2;
-			else
-				thresh = (thresh + 255) / 2;
-			
-			if (opt.threshold == thresh)
-			{
-				cerr << "Warning: could not estimate threshold." << endl;
-				break;
-			}
-			else
-			{
-				opt.threshold = thresh;
-			}
-		}
-		cout << "Threshold auto-estimated at " << opt.threshold << endl;
-	}
-	else
-	{
-		findStars(l, lstars, opt.threshold);
-	}
-	findStars(r, rstars, opt.threshold);
+	findStarsThresh(l, lstars, opt);
+	findStarsThresh(r, rstars, opt);
 	Mat trans;
 	bool ret = getTransform(lstars, rstars, trans, opt);
 	if (!ret) {
@@ -464,10 +471,10 @@ int main(int argc, char ** argv)
 	opt.threshold = -1; // autodetect
 	opt.subsample = 0.5;
 	opt.minLineLength = 100;
-	opt.percentStarsRequired = 50;
-	opt.relativeLengthTolerance = 0.05;
-	opt.starDistCutoff = 100;
-	opt.starCount = 15;
+	opt.percentStarsRequired = 66;
+	opt.relativeLengthTolerance = 0.01;
+	opt.starDistCutoff = 10;
+	opt.starCount = 20;
 	opt.outfile = "";
 
 	// get the options
