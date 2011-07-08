@@ -193,7 +193,7 @@ double evaluate(const Mat & trans, const Stars & xs, Index_<double> & yindex, co
 	
 	// for each transformed star, find its nearest neighbor
 	Mat indices(xs.size(), 1, CV_32S), dists(xs.size(), 1, CV_32F);
-	yindex.knnSearch(query.t(), indices, dists, 1, SearchParams());
+	yindex.knnSearch(query, indices, dists, 1, SearchParams());
 	
 	// evaluate the nearest-neighbor assignment
 	int cnt = 0;
