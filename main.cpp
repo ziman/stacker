@@ -278,36 +278,17 @@ bool getTransform(const Stars & xs, const Stars & ys, Mat & bestTrans, const Opt
 		while (esthi < yl.size() && yl[esthi].length - tolerance <= xlen)
 			++esthi;
 
-		// traverse all lines within the tolerance, beginning from the middle
-		hi = lo+1;
-		while (lo > estlo || hi < esthi)
+		// traverse all lines within the tolerance
+		for (int i = estlo+1; i < esthi; ++i)
 		{
-			if (lo > estlo)
+			Mat trans = getLineTransform(xline, yl[lo]);
+			double score = evaluate(trans, xs, yindex, opt);
+			if (score > bestScore)
 			{
-				Mat trans = getLineTransform(xline, yl[lo]);
-				double score = evaluate(trans, xs, yindex, opt);
-				if (score > bestScore)
-				{
-					bestScore = score;
-					bestTrans = trans;
-					bestOfs = lo - estimate;
-				}
+				bestScore = score;
+				bestTrans = trans;
+				bestOfs = lo - estimate;
 			}
-			
-			if (hi < esthi)
-			{
-				Mat trans = getLineTransform(xline, yl[hi]);
-				double score = evaluate(trans, xs, yindex, opt);
-				if (score > bestScore)
-				{
-					bestScore = score;
-					bestTrans = trans;
-					bestOfs = hi - estimate;
-				}
-			}
-			
-			--lo;
-			++hi;
 		}
 	}
 
