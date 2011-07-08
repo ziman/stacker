@@ -495,41 +495,47 @@ void findStarsThresh(const Mat & srcimg, Stars & stars, Options & opt)
 	opt.threshold = thresh;
 }
 
-/// Merge the range of files beginning with a; b being the first untouched index.
-Mat merge(const vector<string> & fn, int a, int b, Options & opt)
+Mat load(const string & fn, const Options & opt)
 {
-	if (a+1 >= b)
-	{
-		cout << "Loading " << fn[a] << endl;
-		Mat full = imread(fn[a], CV_LOAD_IMAGE_GRAYSCALE);
-		Mat subsampled;
-		resize(full, subsampled, Size(0,0), opt.subsample, opt.subsample);
-		normalize(subsampled);
-		return subsampled;
-	}
+	cout << "Loading " << fn << endl;
+	Mat full = imread(fn, CV_LOAD_IMAGE_GRAYSCALE);
+	Mat subsampled;
+	resize(full, subsampled, Size(0,0), opt.subsample, opt.subsample);
+	normalize(subsampled);
+	return subsampled;
+}
 
-	// merge recursively
-	int mid = (a + b) / 2;
-	Mat l = merge(fn, a, mid, opt);
-	Mat r = merge(fn, mid, b, opt);
-
-	// align the images
-	Stars lstars, rstars;
-	findStarsThresh(l, lstars, opt);
-	findStarsThresh(r, rstars, opt);
-	Mat trans;
-	bool ret = getTransform(lstars, rstars, trans, opt);
-	if (!ret) {
-		cout << "ERROR: Could not align images! The resulting image will be bad." << endl;
-		return l; // no transform could be found -> return (arbitrarily) the left child
-	}
-
-	// remap
-	Mat lremap;
-	warpAffine(l, lremap, trans, r.size());
+Mat merge(const vector<string> & fn, Options & opt)
+{
+	int mid = fn.size() / 2;
+	Mat mimg = load(fn[mid], opt);
+	Stars mstars;
+	findStarsThresh(mimg, mstars, opt);
+	double n = 0;
 	
-	// merge
-	return (0.5*lremap + 0.5*r);
+	for (int i = 0; i < fn.size(); ++i)
+	{
+		if (i == mid) continue;
+		
+		Mat img = load(fn[i], opt);
+		Stars stars;
+		findStarsThresh(img, stars, opt);
+		
+		Mat trans;
+		bool ret = getTransform(stars, mstars, trans, opt);
+		if (!ret) {
+			cout << "Could not transform image " << i << ", skipping." << endl;
+			continue;
+		}
+		
+		Mat lremap;
+		warpAffine(img, lremap, trans, mimg.size());
+		
+		n += 1;
+		mimg = (1 - 1/n) * mimg + (1/n) * lremap;
+	}
+	
+	return mimg;
 }
 
 /// Print usage information and quit.
@@ -607,7 +613,7 @@ int main(int argc, char ** argv)
 		die("no point in aligning less than two images");
 
 	// stack the images
-	Mat stack = merge(imgNames, 0, imgNames.size(), opt);
+	Mat stack = merge(imgNames, opt);
 
 	if (opt.outfile == "")
 	{
