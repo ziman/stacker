@@ -133,7 +133,7 @@ struct Line
 	{ }
 	
 	/// Return this line with (a,b) swapped.
-	Line swap()
+	Line swap() const
 	{
 		return Line(b,a);
 	}
@@ -225,21 +225,11 @@ double evaluate(const Mat & trans, const Stars & xs, Index_<double> & yindex, co
 }
 
 /// Get the best transformation that transforms xs closest to ys.
-bool getTransform(const Stars & xs, const Stars & ys, Mat & bestTrans, const Options & opt)
+bool getTransform(const Stars & xs, Index_<double> & yindex, const vector<Line> & yl, Mat & bestTrans, const Options & opt)
 {
-	// precompute NN search index
-	Mat ymat(ys.size(), 2, CV_64F);
-	for (int y = 0; y < ys.size(); ++y)
-	{
-		ymat.at<double>(y, 0) = ys[y].x;
-		ymat.at<double>(y, 1) = ys[y].y;
-	}
-	Index_<double> yindex(ymat, KDTreeIndexParams(4));
-
 	// find all lines
-	vector<Line> xl, yl;
+	vector<Line> xl;
 	getLines(xs, xl);
-	getLines(ys, yl);
 	
 	// we want at least one line
 	if (xl.size() < 1 || yl.size() < 1)
@@ -250,7 +240,6 @@ bool getTransform(const Stars & xs, const Stars & ys, Mat & bestTrans, const Opt
 	
 	// sort the lines
 	sort(xl.rbegin(), xl.rend());
-	sort(yl.begin(), yl.end());
 	
 	// cout << "X stars: " << xs.size() << ", Y stars: " << ys.size() << endl;
 	// cout << "X lines: " << xl.size() << ", Y lines: " << yl.size() << endl;
@@ -315,7 +304,10 @@ bool getTransform(const Stars & xs, const Stars & ys, Mat & bestTrans, const Opt
 		}
 	}
 
-	cout << "Best score is " << opt.starDistCutoff-bestScore << " at offset " << bestOfs << endl;
+	if (bestScore > 0)
+		cout << "OK (score " << opt.starDistCutoff-bestScore << " at offset " << bestOfs << ")" << endl;
+	else
+		cout << "FAIL, skipping" << endl;
 	return (bestScore > 0);
 };
 
@@ -402,12 +394,6 @@ void findStars(const Mat & srcimg, Stars & stars, int thresh, int limit)
 	}
 }
 
-/// Clamp the given value to 0..255.
-inline uint8_t clamp(int x)
-{
-	return (x < 0) ? 0 : ((x > 255) ? 255 : x);
-}
-
 #define FOREACH(st) \
 	for (int y = 0; y < mat.rows; ++y) 			\
 	{							\
@@ -418,36 +404,9 @@ inline uint8_t clamp(int x)
 			++row;					\
 		}						\
 	}
-/// Normalize the image brightness and contrast.
 void normalize(Mat & mat)
 {
-	/*
-	// calculate sum of the pixels
-	int sum = 0;
-	FOREACH(sum += *row);
-
-	// calculate average
-	int N = mat.rows * mat.cols;
-	int avg = sum / N;
-	
-	// calculate quadratic error
-	int sqdiff = 0;
-	FOREACH(sqdiff += (avg-*row) * (avg-*row));
-	
-	// calculate variance and standard deviation
-	int var = sqdiff / N;
-	int sigma = lround(sqrt(var));
-	*/
-	
-	/*
-	Scalar mean, sigma;
-	meanStdDev(mat, mean, sigma);
-	*/
-	
-	// scale the image to cover (mu..mu+32*sigma)
-	//FOREACH(*row = clamp(255 * ((int) *row - (int) avg) / (32 * sigma)));
-	
-	FOREACH(*row = lround(31 * log2(*row)));
+	FOREACH(*row = *row ? lround(31 * log2(*row)) : 0);
 }
 
 /// Find all stars using an adaptive threshold.
@@ -497,7 +456,8 @@ void findStarsThresh(const Mat & srcimg, Stars & stars, Options & opt)
 
 Mat load(const string & fn, const Options & opt)
 {
-	cout << "Loading " << fn << endl;
+	cout << fn << " ... ";
+	cout.flush();
 	Mat full = imread(fn, CV_LOAD_IMAGE_GRAYSCALE);
 	Mat subsampled;
 	resize(full, subsampled, Size(0,0), opt.subsample, opt.subsample);
@@ -507,12 +467,31 @@ Mat load(const string & fn, const Options & opt)
 
 Mat merge(const vector<string> & fn, Options & opt)
 {
+	// load the middle image
 	int mid = fn.size() / 2;
 	Mat mimg = load(fn[mid], opt);
+	
+	// find its stars
 	Stars mstars;
 	findStarsThresh(mimg, mstars, opt);
-	double n = 0;
 	
+	// precompute NN search index
+	Mat ymat(mstars.size(), 2, CV_64F);
+	for (int y = 0; y < mstars.size(); ++y)
+	{
+		ymat.at<double>(y, 0) = mstars[y].x;
+		ymat.at<double>(y, 1) = mstars[y].y;
+	}
+	Index_<double> yindex(ymat, KDTreeIndexParams(4));
+
+	// precompute line list
+	vector<Line> ylines;
+	getLines(mstars, ylines);
+	sort(ylines.begin(), ylines.end());
+	
+	cout << "preprocessed." << endl;
+	
+	double n = 0;
 	for (int i = 0; i < fn.size(); ++i)
 	{
 		if (i == mid) continue;
@@ -522,11 +501,9 @@ Mat merge(const vector<string> & fn, Options & opt)
 		findStarsThresh(img, stars, opt);
 		
 		Mat trans;
-		bool ret = getTransform(stars, mstars, trans, opt);
-		if (!ret) {
-			cout << "Could not transform image " << i << ", skipping." << endl;
+		bool ret = getTransform(stars, yindex, ylines, trans, opt);
+		if (!ret)
 			continue;
-		}
 		
 		Mat lremap;
 		warpAffine(img, lremap, trans, mimg.size());
