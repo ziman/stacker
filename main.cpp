@@ -48,6 +48,8 @@ struct Options
 	float starDistCutoff; ///< Maximum px distance between two stars to be considered identical.
 	int starCount; ///< Calculate with (roughly) this number of brightest stars in the images.
 	float normalizeSd; ///< how many standard deviations the image should contain
+	int hfrom; ///< the pixel value that will be mapped to 0
+	int hto; ///< the pixel value that will be mapped to 255
 	string outfile; ///< Destination image file name. Leave empty to display directly.
 };
 
@@ -538,6 +540,8 @@ Mat merge(const vector<string> & fn, Options & opt)
 	cout << "preprocessed." << endl;
 	
 	vector<MergeItem> mergeItems;
+	MergeItem defaultItem = { fn[mid], Mat::eye(2,3,CV_64F) };
+	mergeItems.push_back(defaultItem);
 	for (int i = 0; i < fn.size(); ++i)
 	{
 		if (i == mid) continue;
@@ -600,6 +604,8 @@ int main(int argc, char ** argv)
 	opt.starDistCutoff = 10;
 	opt.starCount = 20;
 	opt.normalizeSd = 16;
+	opt.hfrom = 0;
+	opt.hto = 255;
 	opt.outfile = "";
 
 	// get the options
@@ -631,6 +637,10 @@ int main(int argc, char ** argv)
 			opt.outfile = *argv++;
 		else if (o == "-n")
 			opt.normalizeSd = atof(*argv++);
+		else if (o == "--hfrom")
+			opt.hfrom = atoi(*argv++);
+		else if (o == "--hto")
+			opt.hto = atoi(*argv++);
 		else 
 			usage();
 	}
@@ -648,6 +658,12 @@ int main(int argc, char ** argv)
 	Mat stout;
 	Mat stack = merge(imgNames, opt);
 	normalize(stack, stout, 255, 0);
+	/*
+	double alpha = 255.0 / (opt.hto - opt.hfrom);
+	double beta = - opt.hfrom * alpha;
+	stout.convertTo(stack, CV_32F, alpha, beta);
+	// stack = stout;
+	*/
 
 	if (opt.outfile == "")
 	{
