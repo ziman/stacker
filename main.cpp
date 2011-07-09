@@ -457,11 +457,11 @@ void findStarsThresh(const Mat & srcimg, Stars & stars, Options & opt)
 	opt.threshold = thresh;
 }
 
-Mat load(const string & fn, const Options & opt)
+Mat load(const string & fn, const Options & opt, int mode)
 {
 	cout << fn << " ... ";
 	cout.flush();
-	Mat full = imread(fn, CV_LOAD_IMAGE_GRAYSCALE);
+	Mat full = imread(fn, mode);
 	Mat subsampled;
 	resize(full, subsampled, Size(0,0), opt.subsample, opt.subsample);
 	return subsampled;
@@ -491,7 +491,7 @@ Merged remap(const vector<MergeItem> & items, int lo, int hi, const Options & op
 	// load single image
 	if (lo+1 == hi)
 	{
-		Mat img = floatify(load(items[lo].fname, opt));
+		Mat img = floatify(load(items[lo].fname, opt, CV_LOAD_IMAGE_COLOR));
 		//normalize(img, opt.normalizeSd);
 		Merged m;
 		m.weight = 1;
@@ -511,12 +511,12 @@ Merged remap(const vector<MergeItem> & items, int lo, int hi, const Options & op
 	return m;
 }
 
-Mat merge(const vector<string> & fn, Options & opt)
+vector<MergeItem> alignImages(const vector<string> & fn, Options & opt)
 {
 	int mid = fn.size() / 2;
 
 	// load the middle image
-	Mat mimg = load(fn[mid], opt);
+	Mat mimg = load(fn[mid], opt, CV_LOAD_IMAGE_GRAYSCALE);
 	logarithmize(mimg);
 	
 	// find its stars
@@ -547,7 +547,7 @@ Mat merge(const vector<string> & fn, Options & opt)
 		if (i == mid) continue;
 		
 		// load the image
-		Mat img = load(fn[i], opt);
+		Mat img = load(fn[i], opt, CV_LOAD_IMAGE_GRAYSCALE);
 		logarithmize(img);
 		
 		// find stars
@@ -566,8 +566,7 @@ Mat merge(const vector<string> & fn, Options & opt)
 		mergeItems.push_back(item);
 	}
 	
-	cout << "Remapping images..." << endl;
-	return remap(mergeItems, 0, mergeItems.size(), opt).image;
+	return mergeItems;
 }
 
 /// Print usage information and quit.
@@ -654,10 +653,14 @@ int main(int argc, char ** argv)
 	if (imgNames.size() < 2)
 		die("no point in aligning less than two images");
 
-	// stack the images
+	// get the transformations
+	cout << "Calculating transformations..." << endl;
+	vector<MergeItem> mergeItems = alignImages(imgNames, opt);
+	
+	cout << "Remapping images..." << endl;
+	Mat stack = remap(mergeItems, 0, mergeItems.size(), opt).image;
 	Mat stout;
-	Mat stack = merge(imgNames, opt);
-	normalize(stack, stout, 65535, 0);
+	normalize(stack, stout, 255, 0);
 	/*
 	double alpha = 255.0 / (opt.hto - opt.hfrom);
 	double beta = - opt.hfrom * alpha;
