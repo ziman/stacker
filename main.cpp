@@ -24,12 +24,13 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include "opencv.hpp"
+
 #include <iostream>
 #include <string>
 #include <vector>
 #include <list>
-
-#include "opencv.hpp"
+#include <tiffio.h>
 
 using namespace cv;
 using namespace std;
@@ -97,6 +98,40 @@ Blob & operator+=(Blob & blob, const Blob & x)
 
 typedef vector<Star> Stars;
 typedef vector<Blob> Blobs;
+typedef unsigned short ushort;
+
+void tiffSave16(const std::string & fname, const Mat & img)
+{
+    // open the file for writing
+    TIFF * tiff = TIFFOpen(fname.c_str(), "w");
+    if (!tiff)
+    {
+        cerr << "could not write to " << fname << endl;
+        return;
+    }
+
+    // set TIFF fields
+    TIFFSetField(tiff, TIFFTAG_IMAGEWIDTH, img.cols);
+    TIFFSetField(tiff, TIFFTAG_IMAGELENGTH, img.rows);
+    TIFFSetField(tiff, TIFFTAG_BITSPERSAMPLE, 16);
+    TIFFSetField(tiff, TIFFTAG_SAMPLESPERPIXEL, 3);
+    TIFFSetField(tiff, TIFFTAG_ROWSPERSTRIP, 1);
+
+    TIFFSetField(tiff, TIFFTAG_COMPRESSION, COMPRESSION_LZW);
+    TIFFSetField(tiff, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_RGB);
+    TIFFSetField(tiff, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
+
+    TIFFSetField(tiff, TIFFTAG_XRESOLUTION, 72.0);
+    TIFFSetField(tiff, TIFFTAG_YRESOLUTION, 72.0);
+    TIFFSetField(tiff, TIFFTAG_RESOLUTIONUNIT, RESUNIT_INCH);
+
+    // write the image
+    for (int y = 0; y < img.rows; ++y)
+        TIFFWriteScanline(tiff, (void *) img.ptr<ushort>(y), y);
+
+    // close the file
+    TIFFClose(tiff);
+}
 
 /// Print error message and quit.
 void die(const string & msg)
@@ -659,14 +694,12 @@ int main(int argc, char ** argv)
 	
 	cout << "Remapping images..." << endl;
 	Mat stack = remap(mergeItems, 0, mergeItems.size(), opt).image;
+
+	Mat normalized(stack.rows, stack.cols, CV_32F);
+	normalize(stack, normalized, 256.0*256.0*256.0-1, 0);
+
 	Mat stout;
-	normalize(stack, stout, 255, 0);
-	/*
-	double alpha = 255.0 / (opt.hto - opt.hfrom);
-	double beta = - opt.hfrom * alpha;
-	stout.convertTo(stack, CV_32F, alpha, beta);
-	// stack = stout;
-	*/
+	normalized.convertTo(stout, CV_16U);
 
 	if (opt.outfile == "")
 	{
@@ -678,7 +711,7 @@ int main(int argc, char ** argv)
 	else
 	{
 		// save the image
-		imwrite(opt.outfile, stout);
+		tiffSave16(opt.outfile, stout);
 		cout << "Image saved to " << opt.outfile << endl;
 	}
 
